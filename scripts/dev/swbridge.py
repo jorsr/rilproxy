@@ -2,7 +2,7 @@
 ''' relay packets between the AP and BP interfaces'''
 import selectors
 import socket
-# TODO import the bla.py file
+from .ril_h import REQUEST
 
 
 REQUEST_SETUP = 0xc715
