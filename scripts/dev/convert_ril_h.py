@@ -221,7 +221,6 @@ def output_lua_table(fh, tablename, data):
 
 def output_lua(result, filename):
     with open(filename, 'w') as f:
-
         f.write("RIL_VERSION = %s\n" % (defines['RIL_VERSION']))
 
         # Output all enums
@@ -240,8 +239,49 @@ def output_lua(result, filename):
             output_lua_table(f, tablename, table)
 
 
+def output_python_dict(fh, tablename, data):
+    fh.write("# %s\n" % (tablename))
+
+    if tablename in trim_prefixes:
+        prefix = trim_prefixes[tablename]
+    else:
+        prefix = ''
+
+    # Write constants
+    for key in sorted(data):
+        entryname = trim_prefix(data[key], prefix + '_')
+        # Use decimal for negative numbers TODO why?
+        fmt = "%d" if key < 0 else "0x%4.4x"
+        fh.write(("%s_%s = " + fmt + "\n") % (tablename, entryname, key))
+
+    # Write table for mapping strings to constants
+    fh.write("%s = {" % (tablename))
+    for i, key in enumerate(sorted(data)):
+        separator = "," if i > 0 else ""
+        entryname = trim_prefix(data[key], prefix + '_')
+        fh.write("%s\n    '%s_%s': '%s'" % (separator, tablename, entryname,
+                                            entryname))
+    fh.write("\n}\n")
+
+
 def output_python(result, filename):
-    pass
+    with open(filename, 'w') as f:
+        f.write("RIL_VERSION = %s\n" % (defines['RIL_VERSION']))
+
+        # Output all enums
+        for (name, data) in result:
+            name = trim_prefix(name, 'RIL_')
+            if name in ignore_enums:
+                continue
+            output_python_dict(f, name.upper(), data)
+
+        for tablename in generate_defines:
+            table = {}
+            for define in defines:
+                name = trim_prefix(define, 'RIL_')
+                if name.startswith(tablename + '_'):
+                    table[int(defines[define], 0)] = name
+            output_python_dict(f, tablename, table)
 
 
 def main():
