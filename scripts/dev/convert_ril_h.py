@@ -194,8 +194,11 @@ def trim_prefix(value, prefix):
     return value
 
 
-def output_lua_table(fh, tablename, data):
-    fh.write("-- %s\n" % (tablename))
+def output_table(fh, tablename, data, python):
+    if python:
+        fh.write("# %s\n" % (tablename))
+    else:
+        fh.write("-- %s\n" % (tablename))
 
     if tablename in trim_prefixes:
         prefix = trim_prefixes[tablename]
@@ -214,12 +217,16 @@ def output_lua_table(fh, tablename, data):
     for i, key in enumerate(sorted(data)):
         separator = "," if i > 0 else ""
         entryname = trim_prefix(data[key], prefix + '_')
-        fh.write('%s\n    [%s_%s] = "%s"' % (separator, tablename, entryname,
-                                             entryname))
+        if python:
+            fh.write("%s\n    '%s_%s': '%s'" % (separator, tablename,
+                                                entryname, entryname))
+        else:
+            fh.write('%s\n    [%s_%s] = "%s"' % (separator, tablename,
+                                                 entryname, entryname))
     fh.write("\n}\n")
 
 
-def output_lua(result, filename):
+def output(result, filename, python):
     with open(filename, 'w') as f:
         f.write("RIL_VERSION = %s\n" % (defines['RIL_VERSION']))
 
@@ -228,7 +235,7 @@ def output_lua(result, filename):
             name = trim_prefix(name, 'RIL_')
             if name in ignore_enums:
                 continue
-            output_lua_table(f, name.upper(), data)
+            output_table(f, name.upper(), data, python)
 
         for tablename in generate_defines:
             table = {}
@@ -236,52 +243,7 @@ def output_lua(result, filename):
                 name = trim_prefix(define, 'RIL_')
                 if name.startswith(tablename + '_'):
                     table[int(defines[define], 0)] = name
-            output_lua_table(f, tablename, table)
-
-
-def output_python_dict(fh, tablename, data):
-    fh.write("# %s\n" % (tablename))
-
-    if tablename in trim_prefixes:
-        prefix = trim_prefixes[tablename]
-    else:
-        prefix = ''
-
-    # Write constants
-    for key in sorted(data):
-        entryname = trim_prefix(data[key], prefix + '_')
-        # Use decimal for negative numbers TODO why?
-        fmt = "%d" if key < 0 else "0x%4.4x"
-        fh.write(("%s_%s = " + fmt + "\n") % (tablename, entryname, key))
-
-    # Write table for mapping strings to constants
-    fh.write("%s = {" % (tablename))
-    for i, key in enumerate(sorted(data)):
-        separator = "," if i > 0 else ""
-        entryname = trim_prefix(data[key], prefix + '_')
-        fh.write("%s\n    '%s_%s': '%s'" % (separator, tablename, entryname,
-                                            entryname))
-    fh.write("\n}\n")
-
-
-def output_python(result, filename):
-    with open(filename, 'w') as f:
-        f.write("RIL_VERSION = %s\n" % (defines['RIL_VERSION']))
-
-        # Output all enums
-        for (name, data) in result:
-            name = trim_prefix(name, 'RIL_')
-            if name in ignore_enums:
-                continue
-            output_python_dict(f, name.upper(), data)
-
-        for tablename in generate_defines:
-            table = {}
-            for define in defines:
-                name = trim_prefix(define, 'RIL_')
-                if name.startswith(tablename + '_'):
-                    table[int(defines[define], 0)] = name
-            output_python_dict(f, tablename, table)
+            output_table(f, tablename, table, python)
 
 
 def main():
@@ -294,10 +256,7 @@ def main():
     args = parser.parse_args()
 
     data = parse_ril(args.ril_h)
-    if args.python:
-        output_python(data, args.output)
-    else:
-        output_lua(data, args.output)
+    output(data, args.output, args.python)
 
 
 if __name__ == '__main__':
