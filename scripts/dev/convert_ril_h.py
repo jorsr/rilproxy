@@ -122,7 +122,6 @@ def parse_bitshift(s, loc, toks):
 
 
 def parse_ril(filename):
-
     with open(filename, 'r') as f:
         content = "".join(f.readlines())
 
@@ -196,7 +195,6 @@ def trim_prefix(value, prefix):
 
 
 def output_lua_table(fh, tablename, data):
-
     fh.write("-- %s\n" % (tablename))
 
     if tablename in trim_prefixes:
@@ -222,7 +220,6 @@ def output_lua_table(fh, tablename, data):
 
 
 def output_lua(result, filename):
-
     with open(filename, 'w') as f:
 
         f.write("RIL_VERSION = %s\n" % (defines['RIL_VERSION']))
@@ -243,16 +240,24 @@ def output_lua(result, filename):
             output_lua_table(f, tablename, table)
 
 
-def main():
+def output_python(result, filename):
+    pass
 
+
+def main():
     parser = argparse.ArgumentParser(description='Parse ril.h file.')
     parser.add_argument('--output', action='store', required=True,
                         help='Output file name')
+    parser.add_argument('--python', action='store_true',
+                        help='output python instead of lua')
     parser.add_argument('ril_h', action='store', help='ril.h file to analyze')
     args = parser.parse_args()
 
     data = parse_ril(args.ril_h)
-    output_lua(data, args.output)
+    if args.python:
+        output_python(data, args.output)
+    else:
+        output_lua(data, args.output)
 
 
 if __name__ == '__main__':
