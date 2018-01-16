@@ -1,8 +1,7 @@
-#!/usr/bin/env python3 
-import sys
+#!/usr/bin/env python3
 import re
 import argparse
-from pyparsing import *
+import pyparsing as pp
 
 # Tables defining prefices to be trimmed from enum table entries
 trim_prefixes = {
@@ -64,6 +63,7 @@ ignore_enums = ['SOCKET_ID']
 # Pre-init with external constants used in ril.h
 defines = {'INT32_MAX': 0xffffffff}
 
+
 def parse_enumspec(s, loc, toks):
     if len(toks) < 2:
         value = None
@@ -74,17 +74,22 @@ def parse_enumspec(s, loc, toks):
     defines[toks[0]] = value
     return (toks[0], value)
 
+
 def parse_define(s, loc, toks):
     return defines[toks[0]]
+
 
 def parse_positive(s, loc, toks):
     return int(toks[0], 10)
 
+
 def parse_negative(s, loc, toks):
     return -toks[0]
 
+
 def parse_hexdecimal(s, loc, toks):
     return int(toks[0], 0)
+
 
 def parse_enum(s, loc, toks):
     result = {}
@@ -95,7 +100,10 @@ def parse_enum(s, loc, toks):
         if value is None:
             none_vals += 1
         else:
-            if none_vals: raise Exception("Enum %s has explicit and implicit values (%s=%s, none_vals=%d)" % (toks[1], key, str(value), none_vals))
+            if none_vals:
+                raise Exception(
+                    ("Enum %s has explicit and implicit values (%s=%s,"
+                     "none_vals=%d)") % (toks[1], key, str(value), none_vals))
 
     prev = -1
     for (key, value) in toks[0]:
@@ -108,73 +116,88 @@ def parse_enum(s, loc, toks):
 
     return (toks[1], result)
 
+
 def parse_bitshift(s, loc, toks):
     return (1 << int(defines[toks[0]]))
+
 
 def parse_ril(filename):
 
     with open(filename, 'r') as f:
         content = "".join(f.readlines())
 
-    definelist= re.findall('^#define\s+([^ ]+)\s+(.*)$', content, flags=re.MULTILINE)
+    definelist = re.findall('^#define\s+([^ ]+)\s+(.*)$', content,
+                            flags=re.MULTILINE)
     for (name, value) in definelist:
         defines[name] = value
 
     # remove comments and other clutter
-    content = re.sub('\/\*.*?\*\/', '', content, flags=re.MULTILINE|re.DOTALL)
+    content = re.sub('\/\*.*?\*\/', '',
+                     content, flags=re.MULTILINE | re.DOTALL)
     content = re.sub('\s*\/\/.*', '', content)
     content = re.sub('#(if|endif).*', '', content)
-    content = re.sub('union\s*{[^}]*?}\s*[^;]*;', '', content, flags=re.MULTILINE|re.DOTALL)
-    content = re.sub('typedef\s+struct\s+{\s+[^}]*\s+}[^;]+;', '', content, flags=re.MULTILINE|re.DOTALL)
-    
-    content = "\n".join(re.findall('typedef\s+enum\s+{\s*.+?\s*}\s*[^;]+\s*;', content, flags=re.MULTILINE|re.DOTALL))
+    content = re.sub('union\s*{[^}]*?}\s*[^;]*;', '',
+                     content, flags=re.MULTILINE | re.DOTALL)
+    content = re.sub('typedef\s+struct\s+{\s+[^}]*\s+}[^;]+;', '',
+                     content, flags=re.MULTILINE | re.DOTALL)
 
-    kw_enum     = Literal("enum")
-    kw_typedef  = Literal("typedef")
-    
-    terminator  = Literal(";")
-    equal       = Literal("=")
-    
-    name        = Word(alphanums + "_")
+    content = "\n".join(re.findall('typedef\s+enum\s+{\s*.+?\s*}\s*[^;]+\s*;',
+                                   content, flags=re.MULTILINE | re.DOTALL))
 
-    positive    = Regex("\d+")
+    kw_enum = pp.Literal("enum")
+    kw_typedef = pp.Literal("typedef")
+
+    terminator = pp.Literal(";")
+    equal = pp.Literal("=")
+
+    name = pp.Word(pp.alphanums + "_")
+
+    positive = pp.Regex("\d+")
     positive.setParseAction(parse_positive)
 
-    negative    = Suppress(Literal("-")) + positive
+    negative = pp.Suppress(pp.Literal("-")) + positive
     negative.setParseAction(parse_negative)
 
-    hexadecimal = Combine (Literal("0x") + Regex("[0-9a-fA-F]+"))
+    hexadecimal = pp.Combine(pp.Literal("0x") + pp.Regex("[0-9a-fA-F]+"))
     hexadecimal.setParseAction(parse_hexdecimal)
 
-    bitshift    = Suppress(Literal("(")) + Suppress(Literal("1")) + Suppress(Literal("<<")) + name + Suppress(Literal(")"))
+    bitshift = (pp.Suppress(pp.Literal("(")) +
+                pp.Suppress(pp.Literal("1")) +
+                pp.Suppress(pp.Literal("<<")) + name +
+                pp.Suppress(pp.Literal(")")))
     bitshift.setParseAction(parse_bitshift)
 
-    define = Word(alphanums + "_")
+    define = pp.Word(pp.alphanums + "_")
     define.setParseAction(parse_define)
 
-    value  = (hexadecimal|negative|positive|bitshift|define)
-    
-    typename    = name
-    enumspec    = typename + Optional(Suppress(equal) + value)
+    value = (hexadecimal | negative | positive | bitshift | define)
+
+    typename = name
+    enumspec = typename + pp.Optional(pp.Suppress(equal) + value)
     enumspec.setParseAction(parse_enumspec)
-    
-    enumdef     = Suppress(kw_typedef) + Suppress(kw_enum) + Suppress(Literal("{")) + Group(delimitedList(enumspec)) + \
-        Suppress(Optional(",")) + Suppress(Literal("}")) + typename + Suppress(terminator)
+
+    enumdef = (pp.Suppress(kw_typedef) + pp.Suppress(kw_enum) +
+               pp.Suppress(pp.Literal("{")) +
+               pp.Group(pp.delimitedList(enumspec)) +
+               pp.Suppress(pp.Optional(",")) + pp.Suppress(pp.Literal("}")) +
+               typename + pp.Suppress(terminator))
     enumdef.setParseAction(parse_enum)
-    
-    enums = OneOrMore(enumdef) + StringEnd()
+
+    enums = pp.OneOrMore(enumdef) + pp.StringEnd()
 
     result = enums.parseString(content)
     return result
+
 
 def trim_prefix(value, prefix):
     if value.startswith(prefix):
         return value[len(prefix):]
     return value
 
+
 def output_lua_table(fh, tablename, data):
 
-    fh.write ("-- %s\n" % (tablename))
+    fh.write("-- %s\n" % (tablename))
 
     if tablename in trim_prefixes:
         prefix = trim_prefixes[tablename]
@@ -193,8 +216,10 @@ def output_lua_table(fh, tablename, data):
     for i, key in enumerate(sorted(data)):
         separator = "," if i > 0 else ""
         entryname = trim_prefix(data[key], prefix + '_')
-        fh.write('%s\n    [%s_%s] = "%s"' % (separator, tablename, entryname, entryname))
+        fh.write('%s\n    [%s_%s] = "%s"' % (separator, tablename, entryname,
+                                             entryname))
     fh.write("\n}\n")
+
 
 def output_lua(result, filename):
 
@@ -217,15 +242,18 @@ def output_lua(result, filename):
                     table[int(defines[define], 0)] = name
             output_lua_table(f, tablename, table)
 
+
 def main():
 
     parser = argparse.ArgumentParser(description='Parse ril.h file.')
-    parser.add_argument('--output', action='store', required=True, help='Output file name')
+    parser.add_argument('--output', action='store', required=True,
+                        help='Output file name')
     parser.add_argument('ril_h', action='store', help='ril.h file to analyze')
     args = parser.parse_args()
 
     data = parse_ril(args.ril_h)
     output_lua(data, args.output)
+
 
 if __name__ == '__main__':
     main()
