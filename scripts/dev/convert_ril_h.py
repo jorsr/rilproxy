@@ -218,8 +218,8 @@ def output_table(fh, tablename, data, python):
         separator = "," if i > 0 else ""
         entryname = trim_prefix(data[key], prefix + '_')
         if python:
-            fh.write("%s\n    '%s_%s': '%s'" % (separator, tablename,
-                                                entryname, entryname))
+            fh.write("%s\n    %s_%s: '%s'" % (separator, tablename,
+                                              entryname, entryname))
         else:
             fh.write('%s\n    [%s_%s] = "%s"' % (separator, tablename,
                                                  entryname, entryname))
