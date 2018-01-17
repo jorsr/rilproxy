@@ -53,6 +53,7 @@ class RilUnsolicitedResponse(RilMessage):
 
 
 def disect_n_filter(bfr, source):
+    # TODO remove some global variables
     global bytes_missing, cache, last_token, packet_num, request_num
     global sub_dissector, requests, pending_requests
 
@@ -83,7 +84,8 @@ def disect_n_filter(bfr, source):
     # Message must be at least 4 bytes
     if msg_len < 4:
         print("[" + packet_num + "] Dropping short buffer of length", msg_len)
-        return 0
+
+        return
 
     header_len = int.from_bytes(bfr[0:3], byteorder='little')
 
@@ -108,33 +110,18 @@ def disect_n_filter(bfr, source):
         b''.join([cache, bfr])
 
         return
-
     cache.clear()
 
     bytes_missing = 0
     command_or_type = int.from_bytes(bfr[4:7], byteorder='little')
 
-    # TODO
-    # if (rid == REQUEST_SETUP):
-    #    ap_ip = tostring(src_ip_addr_f())
-    #    bp_ip = tostring(dst_ip_addr_f())
-
-    # TODO
-    # if sub_dissector:
-    #     info.cols.info:append (", ")
-    # else:
-    #     info.cols.info = DirectionLabel[direction()] + " "
-
-    # TODO info.cols.protocol = 'RILProxy'
-
     if (source == 'ril0'):
-        # TODO remove subtree = add_default_fields(tree, message, bfr(0,-1),
-        # header_len + 4)
         if (header_len > 4):
             token = int.from_bytes(bfr[8:11], byteorder='little')
             ril_msg = RilRequest(command_or_type, header_len, token)
+
             print("REQUEST(" + maybe_unknown(REQUEST[ril_msg.command]) + ")")
-            # TODO do we need this? frames[token] = packet_num
+
             requests[ril_msg.token] = {'command': ril_msg.command,
                                        'request_num': request_num}
             pending_requests[ril_msg.token] = 1
@@ -143,11 +130,10 @@ def disect_n_filter(bfr, source):
                 print("Token delta", ril_msg.token - last_token)
 
             last_token = ril_msg.token
-        # TODO if (header_len > 8):
-            # TODO dissector = query_dissector("rild.request." +
-            # maybe_unknown(REQUEST[rid]))
-            # TODO dissector:call(bfr[12, header_len - 12 + 4]:tvb(), info,
-            # subtree)
+        # TODO handle data
+        # if (header_len > 8):
+        #    dissector:call(bfr[12, header_len - 12 + 4]:tvb(), info,
+        #    subtree)
     elif source == 'enp0s29u1u4':
         m_type = int.from_bytes(bfr[4:7], 'little')
 
@@ -166,23 +152,16 @@ def disect_n_filter(bfr, source):
 
             print("REPLY(" + maybe_unknown(REQUEST[ril_msg.command]) + ") [" +
                   ril_msg.token + "] = " + maybe_unknown(ERRNO[ril_msg.error]))
-            # TODO info.cols.info:append(message)
-            # TODO subtree = add_default_fields(tree, message, bfr, header_len
-            # + 4)
-            # TODO do we need this?
-            # if frames[token] is not None:
-            #     subtree:add(rilproxy.fields.reply, frames[token])
-            # TODO if (header_len > 12):
-            # TODO      dissector = query_dissector("rild.reply." +
-            # maybe_unknown(REQUEST[request.rid]))
-            # TODO      dissector:call(bfr(16, header_len - 16 + 4):tvb(),
-            # info, subtree)
+            # TODO handle data
+            # if (header_len > 12):
+            #   dissector:call(bfr(16, header_len - 16 + 4):tvb(), info,
+            #   subtree)
         elif (ril_msg.m_type == MTYPE_UNSOL):
             command = int.from_bytes(bfr[8:13], byteorder='little')
             ril_msg = RilUnsolicitedResponse(command, header_len)
 
             print("UNSOL(" + maybe_unknown(UNSOL[ril_msg.command]) + ")")
-            # TODO Use data
+            # TODO handle data
             # if (header_len > 8):
             #     dissector:call(bfr(12, header_len - 12 + 4):tvb(), info,
             #     subtree)
@@ -190,15 +169,12 @@ def disect_n_filter(bfr, source):
             print("Warning: UNKNOWN REPLY")
     else:
         print("Warning: INVALID DIRECTION")
-
     print("In-flight requests", len(pending_requests))
 
-    # If data is left in bfr, run dissector on it
+    # If data is left in buffer, run dissector on it
     if msg_len > header_len + 4:
-        previous = sub_dissector
-        sub_dissector = True
         # TODO Handle
-        sub_dissector = previous
+        print('Warning: Data left in buffer')
 
 
 def maybe_unknown(value):
