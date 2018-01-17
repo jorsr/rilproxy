@@ -5,21 +5,6 @@ import socket
 from .ril_h import ERRNO, REQUEST, UNSOL
 
 
-REQUEST_SETUP = 0xc715
-REQUEST_TEARDOWN = 0xc717
-MTYPE_REPLY = 0
-MTYPE_UNSOL = 1
-
-bytes_missing = 0
-cache = bytearray()
-last_token = 0
-request_num = 0
-packet_num = 0
-sub_dissector = False
-requests = {}
-pending_requests = {}
-
-
 # TODO should token be hex?
 # TODO make data mandatory
 
@@ -52,135 +37,166 @@ class RilUnsolicitedResponse(RilMessage):
         super().__init__(length)
 
 
-def disect_n_filter(bfr, source):
-    # TODO remove some global variables
-    global bytes_missing, cache, last_token, packet_num, request_num
-    global sub_dissector, requests, pending_requests
+class Dissector(object):
+    # Constants
+    REQUEST_SETUP = 0xc715
+    REQUEST_TEARDOWN = 0xc717
+    M_TYPE_REPLY = 0
+    M_TYPE_UNSOL = 1
 
-    print("buffer length (raw):", len(bfr))
-    packet_num += 1
+    # Globals
+    cache = bytearray()  # from last run (if all packets get sent in order)
+    last_token = 0  # from possibly further away
+    request_num = 0  # from possibly further away
+    requests = {}  # from further away
+    pending_requests = {}  # from further away
+    packet_num = 0
 
-    # Follow-up to a message where length header indicates more bytes than
-    # available in the message.
-    if bytes_missing > 0:
-        cache = b''.join([cache, bfr])
-        bytes_missing = bytes_missing - len(bfr)
+    def dissect(self, bfr, source):
+        ''' Dissect the RIL packets and return a RIL message object '''
+        # TODO remove some global variables
 
-        # Still fragments missing, wait for next packet
-        if bytes_missing > 0:
-            return
+        print("buffer length (raw):", len(bfr))
+        self.self.packet_num += 1
 
-        bfr = cache
-        cache.clear()
+        # Follow-up to a message where length header indicates more bytes than
+        # available in the message.
+        if self.bytes_missing > 0:
+            self.cache = b''.join([self.cache, bfr])
+            self.bytes_missing = self.bytes_missing - len(bfr)
 
-    # Advance request counter
-    request_num = request_num + 1
+            # Still fragments missing, wait for next packet
+            if self.bytes_missing > 0:
+                return None, self.bytes_missing, self.packet_num
 
-    msg_len = len(bfr)
+            bfr = self.cache
+            self.cache.clear()
 
-    # TODO is this the correct place?
-    print("buffer length (reassembled)", msg_len)
+        # Advance request counter
+        self.request_num = self.request_num + 1
 
-    # Message must be at least 4 bytes
-    if msg_len < 4:
-        print("[" + packet_num + "] Dropping short buffer of length", msg_len)
+        msg_len = len(bfr)
 
-        return
+        # TODO is this the correct place?
+        print("buffer length (reassembled)", msg_len)
 
-    header_len = int.from_bytes(bfr[0:3], byteorder='little')
+        # Message must be at least 4 bytes
+        if msg_len < 4:
+            print("[" + self.packet_num + "] Dropping short buffer of length",
+                  msg_len)
 
-    print("Header length (raw)", header_len)
-    if header_len < 4:
-        print("[{}] Dropping short header length of {}".format(
-            packet_num, header_len))
+            return None, 0, self.packet_num
 
-        return
+        header_len = int.from_bytes(bfr[0:3], byteorder='little')
 
-    #  FIXME: Upper limit?
-    if header_len > 3000:
-        print("[{}] Skipping long buffer of length {}".format(
-            packet_num, header_len))
-        bytes_missing = 0
-        cache.clear()
+        print("Header length (raw)", header_len)
+        if header_len < 4:
+            print("[{}] Dropping short header length of {}".format(
+                self.packet_num, header_len))
 
-        return
-    print("Header length", header_len)
-    if msg_len <= (header_len - 4):
-        bytes_missing = header_len - msg_len + 4
-        b''.join([cache, bfr])
+            return None, 0, self.packet_num
 
-        return
-    cache.clear()
+        #  FIXME: Upper limit?
+        if header_len > 3000:
+            print("[{}] Skipping long buffer of length {}".format(
+                self.packet_num, header_len))
+            self.bytes_missing = 0
+            self.cache.clear()
 
-    bytes_missing = 0
-    command_or_type = int.from_bytes(bfr[4:7], byteorder='little')
+            return None, 0, self.packet_num
+        print("Header length", header_len)
+        if msg_len <= (header_len - 4):
+            self.bytes_missing = header_len - msg_len + 4
+            b''.join([self.cache, bfr])
 
-    if (source == 'ril0'):
-        if (header_len > 4):
-            token = int.from_bytes(bfr[8:11], byteorder='little')
-            ril_msg = RilRequest(command_or_type, header_len, token)
+            return None, self.bytes_missing, self.packet_num
+        self.cache.clear()
 
-            print("REQUEST(" + maybe_unknown(REQUEST[ril_msg.command]) + ")")
+        self.bytes_missing = 0
+        command_or_type = int.from_bytes(bfr[4:7], byteorder='little')
 
-            requests[ril_msg.token] = {'command': ril_msg.command,
-                                       'request_num': request_num}
-            pending_requests[ril_msg.token] = 1
+        if (source == 'ril0'):
+            if (header_len > 4):
+                token = int.from_bytes(bfr[8:11], byteorder='little')
+                ril_msg = RilRequest(command_or_type, header_len, token)
 
-            if ril_msg.token - last_token > 0:
-                print("Token delta", ril_msg.token - last_token)
+                print("REQUEST(" + self.maybe_unknown(REQUEST[ril_msg.command])
+                      + ")")
 
-            last_token = ril_msg.token
-        # TODO handle data
-        # if (header_len > 8):
-        #    dissector:call(bfr[12, header_len - 12 + 4]:tvb(), info,
-        #    subtree)
-    elif source == 'enp0s29u1u4':
-        m_type = int.from_bytes(bfr[4:7], 'little')
+                self.requests[ril_msg.token] = {
+                    'command': ril_msg.command,
+                    'request_num': self.request_num
+                }
+                self.pending_requests[ril_msg.token] = 1
 
-        if (m_type == MTYPE_REPLY):
-            token = int.from_bytes(bfr[8:11])
-            error = int.from_bytes(bfr[12:15])
-            request = requests[ril_msg.token]
-            request_delta = request_num - request.request_num
+                if ril_msg.token - self.last_token > 0:
+                    print("Token delta", ril_msg.token - self.last_token)
 
-            del pending_requests[ril_msg.token]
+                self.last_token = ril_msg.token
 
-            print("Debug: Packets until reply", request_delta)
+                # TODO handle data
+                # if (header_len > 8):
+                #    dissector:call(bfr[12, header_len - 12 + 4]:tvb(), info,
+                #    subtree)
 
-            ril_msg = RilReply(error, request.command, header_len,
-                               request.request_num, token)
+                return ril_msg, 0, self.packet_num
+        elif source == 'enp0s29u1u4':
+            m_type = int.from_bytes(bfr[4:7], 'little')
 
-            print("REPLY(" + maybe_unknown(REQUEST[ril_msg.command]) + ") [" +
-                  ril_msg.token + "] = " + maybe_unknown(ERRNO[ril_msg.error]))
-            # TODO handle data
-            # if (header_len > 12):
-            #   dissector:call(bfr(16, header_len - 16 + 4):tvb(), info,
-            #   subtree)
-        elif (ril_msg.m_type == MTYPE_UNSOL):
-            command = int.from_bytes(bfr[8:13], byteorder='little')
-            ril_msg = RilUnsolicitedResponse(command, header_len)
+            if (m_type == self.M_TYPE_REPLY):
+                token = int.from_bytes(bfr[8:11])
+                error = int.from_bytes(bfr[12:15])
+                request = self.requests[ril_msg.token]
+                request_delta = self.request_num - request.request_num
 
-            print("UNSOL(" + maybe_unknown(UNSOL[ril_msg.command]) + ")")
-            # TODO handle data
-            # if (header_len > 8):
-            #     dissector:call(bfr(12, header_len - 12 + 4):tvb(), info,
-            #     subtree)
+                del self.pending_requests[ril_msg.token]
+
+                print("Debug: Packets until reply", request_delta)
+
+                ril_msg = RilReply(error, request.command, header_len,
+                                   request.request_num, token)
+
+                print("REPLY(" + self.maybe_unknown(REQUEST[ril_msg.command]) +
+                      ") [" + ril_msg.token + "] = " +
+                      self.maybe_unknown(ERRNO[ril_msg.error]))
+
+                # TODO handle data
+                # if (header_len > 12):
+                #   dissector:call(bfr(16, header_len - 16 + 4):tvb(), info,
+                #   subtree)
+
+                return ril_msg
+            elif (ril_msg.m_type == self.M_TYPE_UNSOL):
+                command = int.from_bytes(bfr[8:13], byteorder='little')
+                ril_msg = RilUnsolicitedResponse(command, header_len)
+
+                print("UNSOL(" + self.maybe_unknown(UNSOL[ril_msg.command]) +
+                      ")")
+
+                # TODO handle data
+                # if (header_len > 8):
+                #     dissector:call(bfr(12, header_len - 12 + 4):tvb(), info,
+                #     subtree)
+
+                return ril_msg
+            else:
+                print("Warning: UNKNOWN REPLY")
         else:
-            print("Warning: UNKNOWN REPLY")
-    else:
-        print("Warning: INVALID DIRECTION")
-    print("In-flight requests", len(pending_requests))
+            print("Warning: INVALID DIRECTION")
+        print("In-flight requests", len(self.pending_requests))
 
-    # If data is left in buffer, run dissector on it
-    if msg_len > header_len + 4:
-        # TODO Handle
-        print('Warning: Data left in buffer')
+        # If data is left in buffer, run dissector on it
+        if msg_len > header_len + 4:
+            # TODO Handle
+            print('Warning: Data left in buffer')
 
+    def maybe_unknown(value):
+        if value is not None:
+            return value.lower()
+        return "unknown"
 
-def maybe_unknown(value):
-    if value is not None:
-        return value.lower()
-    return "unknown"
+    def validate(ril_msg):
+        pass
 
 
 def socket_copy(local, remote):
@@ -194,9 +210,10 @@ def socket_copy(local, remote):
         raise RuntimeError('[{} -> {}] error reading {} socket'.format(
             local_name, remote_name, local_name))
 
-    bytes_read = disect_n_filter(bytes_read, local_name)
+    dissector = Dissector()
 
-    bytes_written = remote.send(bytes_read)
+    if dissector.validate(dissector.dissect(bytes_read, local_name)):
+        bytes_written = remote.send(bytes_read)
 
     if bytes_written < 1:
         raise RuntimeError('[{} -> {}] socket connection broken'.format(
