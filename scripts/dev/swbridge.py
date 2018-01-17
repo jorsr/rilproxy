@@ -9,11 +9,21 @@ from .ril_h import ERRNO, REQUEST, UNSOL
 # TODO make data mandatory
 
 class RilMessage(object):
+    '''General RIL Message.
+    All share data and length fields
+    '''
     def __init__(self, length):
         self.length = length
 
 
 class RilRequest(RilMessage):
+    '''A RIL Request.
+    The fields are:
+     * Length
+     * Command
+     * Token
+     * Data
+    '''
     def __init__(self, command, length, token):
         self.command = command
         self.token = token
@@ -21,7 +31,15 @@ class RilRequest(RilMessage):
 
 
 class RilReply(RilMessage):
-    ''' m_type is always 0. Command is not in message. '''
+    '''A RIL Reply.
+    The fields are:
+     * Length
+     * M_Type (always 0)
+     * Token
+     * Error
+     * Data
+    Command is not in the actual message
+    '''
     def __init__(self, command, error, length, reply_to, token):
         self.command = command
         self.error = error
@@ -31,13 +49,23 @@ class RilReply(RilMessage):
 
 
 class RilUnsolicitedResponse(RilMessage):
-    ''' m_type is always 1 '''
+    '''A RIL Unsolicited Response.
+    The fields are:
+     * Length
+     * M_Type (always 1)
+     * Command
+     * Data
+    '''
     def __init__(self, command, length):
         self.command = command
         super().__init__(length)
 
 
 class Dissector(object):
+    '''Dissects RIL Packets and is able to validate them.
+    Based on the Lua Wireshark dissector by Componolit and merged with my own
+    validator.
+    '''
     # Constants
     REQUEST_SETUP = 0xc715
     REQUEST_TEARDOWN = 0xc717
@@ -53,10 +81,8 @@ class Dissector(object):
     packet_num = 0
 
     def dissect(self, bfr, source):
-        ''' Dissect the RIL packets and return a RIL message object '''
-        # TODO remove some global variables
-
-        print("buffer length (raw):", len(bfr))
+        '''Dissect the RIL packets and return a RIL message object.'''
+        print('buffer length (raw):', len(bfr))
         self.self.packet_num += 1
 
         # Follow-up to a message where length header indicates more bytes than
@@ -78,33 +104,33 @@ class Dissector(object):
         msg_len = len(bfr)
 
         # TODO is this the correct place?
-        print("buffer length (reassembled)", msg_len)
+        print('buffer length (reassembled)', msg_len)
 
         # Message must be at least 4 bytes
         if msg_len < 4:
-            print("[" + self.packet_num + "] Dropping short buffer of length",
+            print('[' + self.packet_num + '] Dropping short buffer of length',
                   msg_len)
 
             return None, 0, self.packet_num
 
         header_len = int.from_bytes(bfr[0:3], byteorder='little')
 
-        print("Header length (raw)", header_len)
+        print('Header length (raw)', header_len)
         if header_len < 4:
-            print("[{}] Dropping short header length of {}".format(
+            print('[{}] Dropping short header length of {}'.format(
                 self.packet_num, header_len))
 
             return None, 0, self.packet_num
 
         #  FIXME: Upper limit?
         if header_len > 3000:
-            print("[{}] Skipping long buffer of length {}".format(
+            print('[{}] Skipping long buffer of length {}'.format(
                 self.packet_num, header_len))
             self.bytes_missing = 0
             self.cache.clear()
 
             return None, 0, self.packet_num
-        print("Header length", header_len)
+        print('Header length', header_len)
         if msg_len <= (header_len - 4):
             self.bytes_missing = header_len - msg_len + 4
             b''.join([self.cache, bfr])
@@ -120,8 +146,8 @@ class Dissector(object):
                 token = int.from_bytes(bfr[8:11], byteorder='little')
                 ril_msg = RilRequest(command_or_type, header_len, token)
 
-                print("REQUEST(" + self.maybe_unknown(REQUEST[ril_msg.command])
-                      + ")")
+                print('REQUEST(' + self.maybe_unknown(REQUEST[ril_msg.command])
+                      + ')')
 
                 self.requests[ril_msg.token] = {
                     'command': ril_msg.command,
@@ -130,7 +156,7 @@ class Dissector(object):
                 self.pending_requests[ril_msg.token] = 1
 
                 if ril_msg.token - self.last_token > 0:
-                    print("Token delta", ril_msg.token - self.last_token)
+                    print('Token delta', ril_msg.token - self.last_token)
 
                 self.last_token = ril_msg.token
 
@@ -151,13 +177,13 @@ class Dissector(object):
 
                 del self.pending_requests[ril_msg.token]
 
-                print("Debug: Packets until reply", request_delta)
+                print('Debug: Packets until reply', request_delta)
 
                 ril_msg = RilReply(error, request.command, header_len,
                                    request.request_num, token)
 
-                print("REPLY(" + self.maybe_unknown(REQUEST[ril_msg.command]) +
-                      ") [" + ril_msg.token + "] = " +
+                print('REPLY(' + self.maybe_unknown(REQUEST[ril_msg.command]) +
+                      ') [' + ril_msg.token + '] = ' +
                       self.maybe_unknown(ERRNO[ril_msg.error]))
 
                 # TODO handle data
@@ -170,8 +196,8 @@ class Dissector(object):
                 command = int.from_bytes(bfr[8:13], byteorder='little')
                 ril_msg = RilUnsolicitedResponse(command, header_len)
 
-                print("UNSOL(" + self.maybe_unknown(UNSOL[ril_msg.command]) +
-                      ")")
+                print('UNSOL(' + self.maybe_unknown(UNSOL[ril_msg.command]) +
+                      ')')
 
                 # TODO handle data
                 # if (header_len > 8):
@@ -180,10 +206,10 @@ class Dissector(object):
 
                 return ril_msg
             else:
-                print("Warning: UNKNOWN REPLY")
+                print('Warning: UNKNOWN REPLY')
         else:
-            print("Warning: INVALID DIRECTION")
-        print("In-flight requests", len(self.pending_requests))
+            print('Warning: INVALID DIRECTION')
+        print('In-flight requests', len(self.pending_requests))
 
         # If data is left in buffer, run dissector on it
         if msg_len > header_len + 4:
@@ -191,11 +217,13 @@ class Dissector(object):
             print('Warning: Data left in buffer')
 
     def maybe_unknown(value):
+        '''Return "unknown" for NULL values'''
         if value is not None:
             return value.lower()
-        return "unknown"
+        return 'unknown'
 
     def validate(ril_msg):
+        ''' Run through verifier '''
         pass
 
 
