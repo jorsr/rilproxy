@@ -2,7 +2,7 @@
 ''' relay packets between the AP and BP interfaces'''
 import selectors
 import socket
-from .ril_h import ERRNO, REQUEST, UNSOL
+from ril_h import ERRNO, REQUEST, UNSOL
 
 
 # TODO should token be hex?
@@ -254,7 +254,7 @@ def socket_copy(local, remote):
 
 
 # Open sockets
-# NOTE capabilities would need to be set on python binary+ or be ambient
+# NOTE capabilities would need to be set on python binary or be ambient
 ETH_P_ALL = 0x0003
 local = socket.socket(socket.AF_PACKET, socket.SOCK_RAW,
                       socket.htons(ETH_P_ALL))
