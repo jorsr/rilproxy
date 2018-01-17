@@ -3,3 +3,6 @@ obj
 *.iso
 logs
 swbridge
+
+# Python specific
+__pycache__/
