@@ -2,20 +2,59 @@
 ''' relay packets between the AP and BP interfaces'''
 import selectors
 import socket
-from .ril_h import REQUEST
+from .ril_h import ERRNO, REQUEST, UNSOL
 
 
 REQUEST_SETUP = 0xc715
 REQUEST_TEARDOWN = 0xc717
+MTYPE_REPLY = 0
+MTYPE_UNSOL = 1
+
 bytes_missing = 0
 cache = bytearray()
+last_token = 0
 request_num = 0
 packet_num = 0
 sub_dissector = False
+requests = {}
+pending_requests = {}
 
 
-def disect_n_filter(bfr, direction):
-    global bytes_missing, cache, packet_num, request_num, sub_dissector
+# TODO should token be hex?
+# TODO make data mandatory
+
+class RilMessage(object):
+    def __init__(self, length):
+        self.length = length
+
+
+class RilRequest(RilMessage):
+    def __init__(self, command, length, token):
+        self.command = command
+        self.token = token
+        super().__init__(length)
+
+
+class RilReply(RilMessage):
+    ''' m_type is always 0. Command is not in message. '''
+    def __init__(self, command, error, length, reply_to, token):
+        self.command = command
+        self.error = error
+        self.token = token
+        reply_to = reply_to
+        super().__init__(length)
+
+
+class RilUnsolicitedResponse(RilMessage):
+    ''' m_type is always 1 '''
+    def __init__(self, command, length):
+        self.command = command
+        super().__init__(length)
+
+
+def disect_n_filter(bfr, source):
+    global bytes_missing, cache, last_token, packet_num, request_num
+    global sub_dissector, requests, pending_requests
 
     print("buffer length (raw):", len(bfr))
     packet_num += 1
@@ -36,42 +75,45 @@ def disect_n_filter(bfr, direction):
     # Advance request counter
     request_num = request_num + 1
 
-    bfr_len = len(bfr)
+    msg_len = len(bfr)
 
     # TODO is this the correct place?
-    print("bfr length (reassembled)", bfr_len)
+    print("buffer length (reassembled)", msg_len)
 
     # Message must be at least 4 bytes
-    if bfr_len < 4:
-        print("[" + packet_num + "] Dropping short buffer of length", bfr_len)
+    if msg_len < 4:
+        print("[" + packet_num + "] Dropping short buffer of length", msg_len)
         return 0
 
     header_len = int.from_bytes(bfr[0:3], byteorder='little')
 
     print("Header length (raw)", header_len)
-
     if header_len < 4:
-        print("[" + packet_num + "] Dropping short header len of", header_len)
-        return 0
+        print("[{}] Dropping short header length of {}".format(
+            packet_num, header_len))
+
+        return
 
     #  FIXME: Upper limit?
     if header_len > 3000:
-        print("[" + packet_num + "] Skipping long bfr of length", header_len)
+        print("[{}] Skipping long buffer of length {}".format(
+            packet_num, header_len))
         bytes_missing = 0
         cache.clear()
-        return 0
 
+        return
     print("Header length", header_len)
-
-    if bfr_len <= (header_len - 4):
-        bytes_missing = header_len - bfr_len + 4
+    if msg_len <= (header_len - 4):
+        bytes_missing = header_len - msg_len + 4
         b''.join([cache, bfr])
+
         return
 
     cache.clear()
-    bytes_missing = 0
 
-    rid = int.from_bytes(bfr[4:7], byteorder='little')
+    bytes_missing = 0
+    command_or_type = int.from_bytes(bfr[4:7], byteorder='little')
+
     # TODO
     # if (rid == REQUEST_SETUP):
     #    ap_ip = tostring(src_ip_addr_f())
@@ -85,70 +127,77 @@ def disect_n_filter(bfr, direction):
 
     # TODO info.cols.protocol = 'RILProxy'
 
-    if (direction == 'from AP'):
-        # Request
-        message = "REQUEST(" + maybe_unknown(REQUEST[rid]) + ")"
-        info.cols.info:append(message)
-        subtree = add_default_fields(tree, message, bfr(0,-1), header_len + 4)
-        subtree:add_le(rilproxy.fields.request, bfr(4,4))
+    if (source == 'ril0'):
+        # TODO remove subtree = add_default_fields(tree, message, bfr(0,-1),
+        # header_len + 4)
         if (header_len > 4):
             token = int.from_bytes(bfr[8:11], byteorder='little')
-            info.cols.info:append(" [" + token + "]")
-            frames[token] = packet_num
-            requests[token] = { 'rid': rid, 'request_num': request_num }
-            pending_requests[token] = 1
-            subtree:add_le(rilproxy.fields.token, bfr(8,4))
+            ril_msg = RilRequest(command_or_type, header_len, token)
+            print("REQUEST(" + maybe_unknown(REQUEST[ril_msg.command]) + ")")
+            # TODO do we need this? frames[token] = packet_num
+            requests[ril_msg.token] = {'command': ril_msg.command,
+                                       'request_num': request_num}
+            pending_requests[ril_msg.token] = 1
 
-            if token - last_token > 0:
-                print("Token delta", token - last_token)
-            last_token = token
-        if (header_len > 8):
-            dissector = query_dissector("rild.request." + maybe_unknown(REQUEST[rid]))
-            # TODO dissector:call(bfr[12, header_len - 12 + 4]:tvb(), info, subtree)
-    elif direction() == DIR_FROM_BP:
-        mtype = int.from_bytes(bfr[4:7], 'little')
-        if (mtype == MTYPE_REPLY):
-            result = int.from_bytes(bfr[12:15])
+            if ril_msg.token - last_token > 0:
+                print("Token delta", ril_msg.token - last_token)
+
+            last_token = ril_msg.token
+        # TODO if (header_len > 8):
+            # TODO dissector = query_dissector("rild.request." +
+            # maybe_unknown(REQUEST[rid]))
+            # TODO dissector:call(bfr[12, header_len - 12 + 4]:tvb(), info,
+            # subtree)
+    elif source == 'enp0s29u1u4':
+        m_type = int.from_bytes(bfr[4:7], 'little')
+
+        if (m_type == MTYPE_REPLY):
             token = int.from_bytes(bfr[8:11])
-            request = requests[token]
+            error = int.from_bytes(bfr[12:15])
+            request = requests[ril_msg.token]
             request_delta = request_num - request.request_num
 
-            pending_requests[token] = nil
-            print("Packets until reply", request_delta)
+            del pending_requests[ril_msg.token]
 
-            message = "REPLY(" + maybe_unknown(REQUEST[request.rid]) +") [" + token + "] = " + maybe_unknown(ERRNO[result])
-            info.cols.info:append(message)
-            subtree = add_default_fields(tree, message, bfr, header_len + 4)
-            subtree:add_le(rilproxy.fields.mtype, bfr(4,4))
-            subtree:add_le(rilproxy.fields.token, bfr(8,4))
-            if frames[token] is None:
-                subtree:add(rilproxy.fields.reply, frames[token])
-            subtree:add_le(rilproxy.fields.result, bfr(12,4))
-            if (header_len > 12):
-                dissector = query_dissector("rild.reply." + maybe_unknown(REQUEST[request.rid]))
-                # TODO dissector:call(bfr(16, header_len - 16 + 4):tvb(), info, subtree)
-        elif (mtype == MTYPE_UNSOL):
-            event = int.from_bytes(bfr[8:13], byteorder='little')
-            message = "UNSOL(" + maybe_unknown(UNSOL[event]) + ")"
-            info.cols.info:append(message)
-            subtree = add_default_fields(tree, message, bfr, header_len + 4)
-            subtree:add_le(rilproxy.fields.mtype, bfr(4,4))
-            subtree:add_le(rilproxy.fields.event, bfr(8,4))
-            if (header_len > 8):
-                dissector = query_dissector("rild.unsol." + UNSOL[event])
-                # TODO dissector:call(bfr(12, header_len - 12 + 4):tvb(), info, subtree)
+            print("Debug: Packets until reply", request_delta)
+
+            ril_msg = RilReply(error, request.command, header_len,
+                               request.request_num, token)
+
+            print("REPLY(" + maybe_unknown(REQUEST[ril_msg.command]) + ") [" +
+                  ril_msg.token + "] = " + maybe_unknown(ERRNO[ril_msg.error]))
+            # TODO info.cols.info:append(message)
+            # TODO subtree = add_default_fields(tree, message, bfr, header_len
+            # + 4)
+            # TODO do we need this?
+            # if frames[token] is not None:
+            #     subtree:add(rilproxy.fields.reply, frames[token])
+            # TODO if (header_len > 12):
+            # TODO      dissector = query_dissector("rild.reply." +
+            # maybe_unknown(REQUEST[request.rid]))
+            # TODO      dissector:call(bfr(16, header_len - 16 + 4):tvb(),
+            # info, subtree)
+        elif (ril_msg.m_type == MTYPE_UNSOL):
+            command = int.from_bytes(bfr[8:13], byteorder='little')
+            ril_msg = RilUnsolicitedResponse(command, header_len)
+
+            print("UNSOL(" + maybe_unknown(UNSOL[ril_msg.command]) + ")")
+            # TODO Use data
+            # if (header_len > 8):
+            #     dissector:call(bfr(12, header_len - 12 + 4):tvb(), info,
+            #     subtree)
         else:
-            info.cols.info:append("UNKNOWN REPLY")
+            print("Warning: UNKNOWN REPLY")
     else:
-        info.cols.info:append("INVALID DIRECTION")
+        print("Warning: INVALID DIRECTION")
 
-    print("In-flight requests", count_table (pending_requests))
+    print("In-flight requests", len(pending_requests))
 
     # If data is left in bfr, run dissector on it
-    if bfr_len > header_len + 4:
+    if msg_len > header_len + 4:
         previous = sub_dissector
-        sub_dissector = true
-        # TODO rilproxy.dissector(bfr:range(header_len + 4, -1):tvb(), info, tree)
+        sub_dissector = True
+        # TODO Handle
         sub_dissector = previous
 
 
@@ -169,7 +218,7 @@ def socket_copy(local, remote):
         raise RuntimeError('[{} -> {}] error reading {} socket'.format(
             local_name, remote_name, local_name))
 
-    bytes_read = disect_n_filter(bytes_read)
+    bytes_read = disect_n_filter(bytes_read, local_name)
 
     bytes_written = remote.send(bytes_read)
 
