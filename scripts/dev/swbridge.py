@@ -73,6 +73,7 @@ class Dissector(object):
     M_TYPE_UNSOL = 1
 
     # Globals
+    bytes_missing = 0
     cache = bytearray()  # from last run (if all packets get sent in order)
     last_token = 0  # from possibly further away
     request_num = 0  # from possibly further away
@@ -82,8 +83,8 @@ class Dissector(object):
 
     def dissect(self, bfr, source):
         '''Dissect the RIL packets and return a RIL message object.'''
-        print('buffer length (raw):', len(bfr))
-        self.self.packet_num += 1
+        print('Debug: buffer length (raw):', len(bfr))
+        self.packet_num += 1
 
         # Follow-up to a message where length header indicates more bytes than
         # available in the message.
@@ -93,7 +94,7 @@ class Dissector(object):
 
             # Still fragments missing, wait for next packet
             if self.bytes_missing > 0:
-                return None, self.bytes_missing, self.packet_num
+                return None
 
             bfr = self.cache
             self.cache.clear()
@@ -104,38 +105,38 @@ class Dissector(object):
         msg_len = len(bfr)
 
         # TODO is this the correct place?
-        print('buffer length (reassembled)', msg_len)
+        print('Debug: buffer length (reassembled)', msg_len)
 
         # Message must be at least 4 bytes
         if msg_len < 4:
-            print('[' + self.packet_num + '] Dropping short buffer of length',
-                  msg_len)
+            print('Warning: [' + self.packet_num +
+                  '] Dropping short buffer of length', msg_len)
 
-            return None, 0, self.packet_num
+            return None
 
         header_len = int.from_bytes(bfr[0:3], byteorder='little')
 
-        print('Header length (raw)', header_len)
+        print('Debug: Header length (raw)', header_len)
         if header_len < 4:
-            print('[{}] Dropping short header length of {}'.format(
+            print('Warning: [{}] Dropping short header length of {}'.format(
                 self.packet_num, header_len))
 
-            return None, 0, self.packet_num
+            return None
 
         #  FIXME: Upper limit?
         if header_len > 3000:
-            print('[{}] Skipping long buffer of length {}'.format(
+            print('Warning: [{}] Skipping long buffer of length {}'.format(
                 self.packet_num, header_len))
             self.bytes_missing = 0
             self.cache.clear()
 
-            return None, 0, self.packet_num
-        print('Header length', header_len)
+            return None
+        print('Debug: Header length', header_len)
         if msg_len <= (header_len - 4):
             self.bytes_missing = header_len - msg_len + 4
             b''.join([self.cache, bfr])
 
-            return None, self.bytes_missing, self.packet_num
+            return None
         self.cache.clear()
 
         self.bytes_missing = 0
@@ -156,7 +157,8 @@ class Dissector(object):
                 self.pending_requests[ril_msg.token] = 1
 
                 if ril_msg.token - self.last_token > 0:
-                    print('Token delta', ril_msg.token - self.last_token)
+                    print('Debug: Token delta', ril_msg.token -
+                          self.last_token)
 
                 self.last_token = ril_msg.token
 
@@ -165,7 +167,7 @@ class Dissector(object):
                 #    dissector:call(bfr[12, header_len - 12 + 4]:tvb(), info,
                 #    subtree)
 
-                return ril_msg, 0, self.packet_num
+                return ril_msg
         elif source == 'enp0s29u1u4':
             m_type = int.from_bytes(bfr[4:7], 'little')
 
@@ -239,8 +241,11 @@ def socket_copy(local, remote):
             local_name, remote_name, local_name))
 
     dissector = Dissector()
-
-    if dissector.validate(dissector.dissect(bytes_read, local_name)):
+    ril_msg = dissector.dissect(bytes_read, local_name)
+    if ril_msg:
+        if dissector.validate(ril_msg):
+            bytes_written = remote.send(bytes_read)
+    else:
         bytes_written = remote.send(bytes_read)
 
     if bytes_written < 1:
