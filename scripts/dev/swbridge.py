@@ -7,6 +7,11 @@ from ril_h import ERRNO, REQUEST, UNSOL
 
 # TODO should token be hex?
 # TODO make data mandatory
+ETH_P_ALL = 0x0003
+RILPROXY_PORT = 18912
+UDP = 17
+MOBILE = 55
+
 
 class RilMessage(object):
     '''General RIL Message.
@@ -114,7 +119,8 @@ class Dissector(object):
 
             return None
 
-        header_len = int.from_bytes(bfr[0:3], byteorder='little')
+        print(bfr[0:3])
+        header_len = int.from_bytes(bfr[0:3], byteorder='big')
 
         print('Debug: Header length (raw)', header_len)
         if header_len < 4:
@@ -229,7 +235,7 @@ class Dissector(object):
         pass
 
 
-def socket_copy(local, remote):
+def socket_copy(dissector, local, remote):
     ''' Copy content from to remote socket '''
     rilproxy_buffer_size = 3000  # TODO 3000 is not a power of 2
     bytes_read = local.recv(rilproxy_buffer_size)
@@ -240,12 +246,59 @@ def socket_copy(local, remote):
         raise RuntimeError('[{} -> {}] error reading {} socket'.format(
             local_name, remote_name, local_name))
 
-    dissector = Dissector()
-    ril_msg = dissector.dissect(bytes_read, local_name)
-    if ril_msg:
-        if dissector.validate(ril_msg):
-            bytes_written = remote.send(bytes_read)
+    # debug output for ehternet header
+    ethernet_header = bytes_read[0:14]
+    ethernet_destination = ':'.join('%02x' % x for x in ethernet_header[0:6])
+    ethernet_source = ':'.join('%02x' % x for x in ethernet_header[6:12])
+    ethertype = int.from_bytes(ethernet_header[12:14], byteorder='big')
+
+    print('ETHERNET HEADER')
+    print(' destination MAC:', ethernet_destination)
+    print(' source MAC:     ', ethernet_source)
+    print(' EtherType:      ', ethertype)
+
+    # debug output for IP Header
+    ip_header = bytes_read[14:34]
+    ip_protocol = bytes_read[9]
+    ip_source = socket.inet_ntoa(ip_header[12:16])
+    ip_destination = socket.inet_ntoa(ip_header[16:20])
+
+    print('IP HEADER')
+    print(' protocol:      ', ip_protocol)
+    print(' source IP:     ', ip_source)
+    print(' destination IP:', ip_destination)
+    if ip_protocol == UDP:
+        # debug output for UDP Header
+        udp_header = bytes_read[34:42]
+        udp_source = int.from_bytes(udp_header[0:2], byteorder='big')
+        udp_destination = int.from_bytes(udp_header[2:4], byteorder='big')
+
+        print('UDP HEADER')
+        print(' source port:     ', udp_source)
+        print(' destination port:', udp_destination)
+    elif ip_protocol == MOBILE:
+        # TODO debug output for IP Mobility Header
+        mobile_header = bytes_read[34:42]
+
+        print('MISC')
+        print('packet size:', len(bytes_read))
+        # TODO filter wrong port
+
+        print('[{} -> {}] {}'.format(
+            local_name, remote_name, bytes_read))
+
+        # TODO remove headers
+
+        # TODO dissect the payload
+        # ril_msg = dissector.dissect(bytes_read, local_name)
+        # if ril_msg:
+        #     if dissector.validate(ril_msg):
+        #         bytes_written = remote.send(bytes_read)
+        # else:
+        bytes_written = remote.send(bytes_read)
     else:
+        print('CONTINUING: not UDP')
+
         bytes_written = remote.send(bytes_read)
 
     if bytes_written < 1:
@@ -254,13 +307,12 @@ def socket_copy(local, remote):
     if bytes_written < len(bytes_read):
         raise RuntimeError('[{} -> {}] read {} bytes, wrote {} bytes'.format(
             local_name, remote_name, len(bytes_read), bytes_written))
-    print('[{} -> {}] {}'.format(
-        local_name, remote_name, bytes_read))
 
 
 # Open sockets
 # NOTE capabilities would need to be set on python binary or be ambient
-ETH_P_ALL = 0x0003
+# TODO Is DGRAM better?
+# TODO Is no Protocol better?
 local = socket.socket(socket.AF_PACKET, socket.SOCK_RAW,
                       socket.htons(ETH_P_ALL))
 remote = socket.socket(socket.AF_PACKET, socket.SOCK_RAW,
@@ -270,7 +322,7 @@ local.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,
                  1)
 local.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE,
                  str('ril0' + '\0').encode('utf-8'))
-local.bind(('ril0', 0))
+local.bind(('ril0', 0))  # TODO maybe use the correct port here?
 remote.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,
                   1)
 remote.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE,
@@ -279,6 +331,7 @@ remote.bind(('enp0s29u1u4', 0))
 
 # Proxy it
 sel = selectors.DefaultSelector()
+dissector = Dissector()
 
 sel.register(local, selectors.EVENT_READ)
 sel.register(remote, selectors.EVENT_READ)
@@ -287,9 +340,9 @@ while True:
     events = sel.select()
     for key, mask in events:
         if key.fileobj is local:
-            socket_copy(local, remote)
+            socket_copy(dissector, local, remote)
         else:
-            socket_copy(remote, local)
+            socket_copy(dissector, remote, local)
 
 # Close sockets
 local.close()
