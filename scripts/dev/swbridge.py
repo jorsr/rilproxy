@@ -165,6 +165,7 @@ class Dissector(object):
 
         self.bytes_missing = 0
         command_or_type = int.from_bytes(bfr[4:8], byteorder='little')
+        ril_msg = RilMessage(header_len)
 
         if (source == 'ril0'):
             # TODO Why are there unknown commands?
@@ -193,8 +194,6 @@ class Dissector(object):
                 # if (header_len > 8):
                 #    dissector:call(bfr[12, header_len - 12 + 4]:tvb(), info,
                 #    subtree)
-
-                return ril_msg
         elif source == 'enp0s29u1u4':
             # TODO Why is type sometimes 4?
             m_type = int.from_bytes(bfr[4:8], byteorder='little')
@@ -235,8 +234,6 @@ class Dissector(object):
                 # if (header_len > 12):
                 #   dissector:call(bfr(16, header_len - 16 + 4):tvb(), info,
                 #   subtree)
-
-                return ril_msg
             elif (m_type in [self.RESPONSE_UNSOLICITED,
                              self.RESPONSE_UNSOLICITED_ACK_EXP]):
                 print('DEBUG RIL UNSOLICITED PACKET')
@@ -261,8 +258,6 @@ class Dissector(object):
                 # if (header_len > 8):
                 #     dissector:call(bfr(12, header_len - 12 + 4):tvb(), info,
                 #     subtree)
-
-                return ril_msg
             elif (m_type == self.RESPONSE_SOLICITED_ACK):
                 print('DEBUG RIL SOLICITED ACK PACKET')
                 print('DEBUG  length: ', header_len)
@@ -271,7 +266,6 @@ class Dissector(object):
                 token = int.from_bytes(bfr[8:12], byteorder='little')
 
                 print('DEBUG  token:  ', token)
-
             elif (m_type == self.RESPONSE_SOLICITED_ACK_EXP):
                 print('DEBUG RIL SOLICITED ACK EXP PACKET')
                 print('DEBUG  length: ', header_len)
@@ -285,6 +279,8 @@ class Dissector(object):
         if msg_len > header_len + 4:
             # TODO Handle
             print('WARNING data left in buffer')
+
+        return ril_msg
 
 
 def socket_copy(dissector, local, remote):
