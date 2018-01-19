@@ -65,6 +65,18 @@ class RilUnsolicitedResponse(RilMessage):
         super().__init__(length)
 
 
+def maybe_unknown(dictionary, value):
+    '''Return "unknown" for NULL values'''
+    if value in dictionary.keys():
+        return dictionary[value]
+    return str(value) + ' is unknown'
+
+
+def validate(ril_msg):
+    ''' Run through verifier '''
+    pass
+
+
 class Dissector(object):
     '''Dissects RIL Packets and is able to validate them.
     Based on the Lua Wireshark dissector by Componolit and merged with my own
@@ -88,7 +100,7 @@ class Dissector(object):
     def dissect(self, bfr, source):
         '''Dissect the RIL packets and return a RIL message object.'''
         msg_len = len(bfr) * 8  # from bytes to bits
-        print('Debug: buffer length (raw):', msg_len)
+        print('DEBUG buffer length (raw):', msg_len)
         self.packet_num += 1
 
         # Follow-up to a message where length header indicates more bytes than
@@ -108,27 +120,26 @@ class Dissector(object):
         self.request_num = self.request_num + 1
 
         # TODO is this the correct place?
-        print('Debug: buffer length (reassembled)', msg_len)
+        print('DEBUG buffer length (reassembled)', msg_len)
 
         # Message must be at least 4 bytes
         if msg_len < 4:
-            print('Warning: [' + self.packet_num +
+            print('WARNING [' + self.packet_num +
                   '] Dropping short buffer of length', msg_len)
 
             return None
 
         header_len = int.from_bytes(bfr[0:4], byteorder='big')
 
-        print('Debug: Header length is', header_len)
         if header_len < 4:
-            print('Warning: [{}] Dropping short header length of {}'.format(
+            print('WARNING [{}] Dropping short header length of {}'.format(
                 self.packet_num, header_len))
 
             return None
 
         #  FIXME: Upper limit?
         if header_len > 3000:
-            print('Warning: [{}] Skipping long buffer of length {}'.format(
+            print('WARNING [{}] Skipping long buffer of length {}'.format(
                 self.packet_num, header_len))
             self.bytes_missing = 0
             self.cache = bytearray()
@@ -142,17 +153,19 @@ class Dissector(object):
         self.cache = bytearray()
 
         self.bytes_missing = 0
-        command_or_type = int.from_bytes(bfr[4:8], byteorder='big')
-        print(command_or_type)
+        command_or_type = int.from_bytes(bfr[4:8], byteorder='little')
 
         if (source == 'ril0'):
+            # TODO Why are there unknown commands?
+            print('DEBUG RIL REQUEST PACKET')
+            print('DEBUG  length: ', header_len)
+            print('DEBUG  command:', maybe_unknown(REQUEST, command_or_type))
             if (header_len > 4):
-                token = int.from_bytes(bfr[8:12], byteorder='big')
+                token = int.from_bytes(bfr[8:12], byteorder='little')
+
+                print('DEBUG  token:  ', token)
+
                 ril_msg = RilRequest(command_or_type, header_len, token)
-
-                print('REQUEST(' + self.maybe_unknown(REQUEST[ril_msg.command])
-                      + ')')
-
                 self.requests[ril_msg.token] = {
                     'command': ril_msg.command,
                     'request_num': self.request_num
@@ -160,7 +173,7 @@ class Dissector(object):
                 self.pending_requests[ril_msg.token] = 1
 
                 if ril_msg.token - self.last_token > 0:
-                    print('Debug: Token delta', ril_msg.token -
+                    print('DEBUG token delta', ril_msg.token -
                           self.last_token)
 
                 self.last_token = ril_msg.token
@@ -172,24 +185,32 @@ class Dissector(object):
 
                 return ril_msg
         elif source == 'enp0s29u1u4':
-            m_type = int.from_bytes(bfr[4:8], 'big')
+            # TODO Why is type sometimes 4?
+            m_type = int.from_bytes(bfr[4:8], byteorder='little')
 
             if (m_type == self.M_TYPE_REPLY):
-                token = int.from_bytes(bfr[8:12])
-                error = int.from_bytes(bfr[12:16])
-                request = self.requests[ril_msg.token]
-                request_delta = self.request_num - request.request_num
+                print('DEBUG RIL REPLY PACKET')
+                print('DEBUG  length: ', header_len)
+                print('DEBUG  type:   OnRequestComplete')
 
-                del self.pending_requests[ril_msg.token]
+                token = int.from_bytes(bfr[8:12], byteorder='little')
+                print('DEBUG  token:  ', token)
 
-                print('Debug: Packets until reply', request_delta)
+                error = int.from_bytes(bfr[12:16], byteorder='little')
 
-                ril_msg = RilReply(error, request.command, header_len,
-                                   request.request_num, token)
+                print('DEBUG  error:  ', maybe_unknown(ERRNO, error))
 
-                print('REPLY(' + self.maybe_unknown(REQUEST[ril_msg.command]) +
-                      ') [' + ril_msg.token + '] = ' +
-                      self.maybe_unknown(ERRNO[ril_msg.error]))
+                request = self.requests[token]
+                request_delta = self.request_num - request['request_num']
+
+                del self.pending_requests[token]
+
+                ril_msg = RilReply(error, request['command'], header_len,
+                                   request['request_num'], token)
+
+                print('DEBUG  command:',
+                      maybe_unknown(REQUEST, ril_msg.command))
+                print('DEBUG packets until reply', request_delta)
 
                 # TODO handle data
                 # if (header_len > 12):
@@ -198,11 +219,15 @@ class Dissector(object):
 
                 return ril_msg
             elif (m_type == self.M_TYPE_UNSOL):
-                command = int.from_bytes(bfr[8:14], byteorder='big')
-                ril_msg = RilUnsolicitedResponse(command, header_len)
+                print('DEBUG RIL UNSOL PACKET')
+                print('DEBUG  length: ', header_len)
+                print('DEBUG  type:   OnUnsolicitedResponse')
 
-                print('UNSOL(' + self.maybe_unknown(UNSOL[ril_msg.command]) +
-                      ')')
+                command = int.from_bytes(bfr[8:14], byteorder='little')
+
+                print('DEBUG  command:', maybe_unknown(UNSOL, ril_msg.command))
+
+                ril_msg = RilUnsolicitedResponse(command, header_len)
 
                 # TODO handle data
                 # if (header_len > 8):
@@ -211,25 +236,15 @@ class Dissector(object):
 
                 return ril_msg
             else:
-                print('Warning: UNKNOWN REPLY')
+                print('WARNING wrong packet type', m_type)
         else:
-            print('Warning: INVALID DIRECTION')
+            print('WARNING invalid direction')
         print('In-flight requests', len(self.pending_requests))
 
         # If data is left in buffer, run dissector on it
         if msg_len > header_len + 4:
             # TODO Handle
-            print('Warning: Data left in buffer')
-
-    def maybe_unknown(value):
-        '''Return "unknown" for NULL values'''
-        if value is not None:
-            return value.lower()
-        return 'unknown'
-
-    def validate(ril_msg):
-        ''' Run through verifier '''
-        pass
+            print('WARNING data left in buffer')
 
 
 def socket_copy(dissector, local, remote):
@@ -250,55 +265,58 @@ def socket_copy(dissector, local, remote):
     # ethernet_source = ':'.join('%02x' % x for x in ethernet_header[6:12])
     # ethertype = int.from_bytes(ethernet_header[12:14], byteorder='big')
 
-    # print('ETHERNET HEADER')
-    # print(' destination MAC:', ethernet_destination)
-    # print(' source MAC:     ', ethernet_source)
-    # print(' EtherType:      ', ethertype)
+    # print('VERBOSE ETHERNET HEADER')
+    # print('VERBOSE  destination MAC:', ethernet_destination)
+    # print('VERBOSE  source MAC:     ', ethernet_source)
+    # print('VERBOSE  EtherType:      ', ethertype)
 
     # debug output for IP Header
     ip_header = bytes_read[14:34]
     ip_protocol = ip_header[9]
 
-    # print('IP HEADER')
-    # print(' time to live:  ', ip_header[8])
-    # print(' protocol:      ', ip_protocol)
-    # print(' checksum:      ', ip_header[10:12])
-    # print(' source IP:     ', socket.inet_ntoa(ip_header[12:16]))
-    # print(' destination IP:', socket.inet_ntoa(ip_header[16:20]))
+    # print('VERBOSE IP HEADER')
+    # print('VERBOSE  time to live:  ', ip_header[8])
+    # print('VERBOSE  protocol:      ', ip_protocol)
+    # print('VERBOSE  checksum:      ', ip_header[10:12])
+    # print('VERBOSE  source IP:     ', socket.inet_ntoa(ip_header[12:16]))
+    # print('VERBOSE  destination IP:', socket.inet_ntoa(ip_header[16:20]))
     if ip_protocol == UDP:
         # debug output for UDP Header
         udp_header = bytes_read[34:42]
         udp_source = int.from_bytes(udp_header[0:2], byteorder='big')
-        # udp_destination = int.from_bytes(udp_header[2:4], byteorder='big')
+        udp_destination = int.from_bytes(udp_header[2:4], byteorder='big')
 
-        # print('UDP HEADER')
-        # print(' source port:     ', udp_source)
-        # print(' destination port:', udp_destination)
+        print('VERBOSE UDP HEADER')
+        print('VERBOSE  source port:     ', udp_source)
+        print('VERBOSE  destination port:', udp_destination)
+        # print('VERBOSE  length:          ',
+        #       int.from_bytes(udp_header[4:6], byteorder='big'))
+        # print('VERBOSE  checksum:        ', udp_header[6:8])
 
         if udp_source == RILPROXY_PORT:
-            # print('MISC')
-            # print('packet size:', len(bytes_read))
+            # print('VERBOSE MISC')
+            # print('VERBOSE  packet size:', len(bytes_read))
 
             # remove headers
             udp_payload = bytes_read[42:]
 
-            print('Verbose: [{} -> {}] {}'.format(
+            print('VERBOSE [{} -> {}] {}'.format(
                 local_name, remote_name, udp_payload))
 
             # dissect the UDP payload
             ril_msg = dissector.dissect(udp_payload, local_name)
 
             if ril_msg:
-                if dissector.validate(ril_msg):
+                if validate(ril_msg):
                     bytes_written = remote.send(bytes_read)
             else:  # TODO wait before sending concatenated package
-                print('CONTINUING: Payload was boring')
+                print('Continuing: Payload was boring')
                 bytes_written = remote.send(bytes_read)
         else:
-            print('CONTINUING:', udp_source, 'is incorrect port')
+            print('Continuing:', udp_source, 'is incorrect port')
         bytes_written = remote.send(bytes_read)
     else:
-        print('CONTINUING:', ip_protocol, 'is not UDP')
+        print('Continuing:', ip_protocol, 'is not UDP')
 
         bytes_written = remote.send(bytes_read)
     if bytes_written < 1:
