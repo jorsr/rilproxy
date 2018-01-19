@@ -10,7 +10,6 @@ from ril_h import ERRNO, REQUEST, UNSOL
 ETH_P_ALL = 0x0003
 RILPROXY_PORT = 18912
 UDP = 17
-MOBILE = 55
 
 
 class RilMessage(object):
@@ -88,26 +87,25 @@ class Dissector(object):
 
     def dissect(self, bfr, source):
         '''Dissect the RIL packets and return a RIL message object.'''
-        print('Debug: buffer length (raw):', len(bfr))
+        msg_len = len(bfr) * 8  # from bytes to bits
+        print('Debug: buffer length (raw):', msg_len)
         self.packet_num += 1
 
         # Follow-up to a message where length header indicates more bytes than
         # available in the message.
         if self.bytes_missing > 0:
             self.cache = b''.join([self.cache, bfr])
-            self.bytes_missing = self.bytes_missing - len(bfr)
+            self.bytes_missing = self.bytes_missing - msg_len
 
             # Still fragments missing, wait for next packet
             if self.bytes_missing > 0:
                 return None
 
             bfr = self.cache
-            self.cache.clear()
+            self.cache = bytearray()
 
         # Advance request counter
         self.request_num = self.request_num + 1
-
-        msg_len = len(bfr)
 
         # TODO is this the correct place?
         print('Debug: buffer length (reassembled)', msg_len)
@@ -119,10 +117,9 @@ class Dissector(object):
 
             return None
 
-        print(bfr[0:3])
-        header_len = int.from_bytes(bfr[0:3], byteorder='big')
+        header_len = int.from_bytes(bfr[0:4], byteorder='big')
 
-        print('Debug: Header length (raw)', header_len)
+        print('Debug: Header length is', header_len)
         if header_len < 4:
             print('Warning: [{}] Dropping short header length of {}'.format(
                 self.packet_num, header_len))
@@ -134,23 +131,22 @@ class Dissector(object):
             print('Warning: [{}] Skipping long buffer of length {}'.format(
                 self.packet_num, header_len))
             self.bytes_missing = 0
-            self.cache.clear()
+            self.cache = bytearray()
 
             return None
-        print('Debug: Header length', header_len)
         if msg_len <= (header_len - 4):
             self.bytes_missing = header_len - msg_len + 4
             b''.join([self.cache, bfr])
 
             return None
-        self.cache.clear()
+        self.cache = bytearray()
 
         self.bytes_missing = 0
-        command_or_type = int.from_bytes(bfr[4:7], byteorder='little')
+        command_or_type = int.from_bytes(bfr[4:8], byteorder='little')
 
         if (source == 'ril0'):
             if (header_len > 4):
-                token = int.from_bytes(bfr[8:11], byteorder='little')
+                token = int.from_bytes(bfr[8:12], byteorder='little')
                 ril_msg = RilRequest(command_or_type, header_len, token)
 
                 print('REQUEST(' + self.maybe_unknown(REQUEST[ril_msg.command])
@@ -175,11 +171,11 @@ class Dissector(object):
 
                 return ril_msg
         elif source == 'enp0s29u1u4':
-            m_type = int.from_bytes(bfr[4:7], 'little')
+            m_type = int.from_bytes(bfr[4:8], 'little')
 
             if (m_type == self.M_TYPE_REPLY):
-                token = int.from_bytes(bfr[8:11])
-                error = int.from_bytes(bfr[12:15])
+                token = int.from_bytes(bfr[8:12])
+                error = int.from_bytes(bfr[12:16])
                 request = self.requests[ril_msg.token]
                 request_delta = self.request_num - request.request_num
 
@@ -201,7 +197,7 @@ class Dissector(object):
 
                 return ril_msg
             elif (ril_msg.m_type == self.M_TYPE_UNSOL):
-                command = int.from_bytes(bfr[8:13], byteorder='little')
+                command = int.from_bytes(bfr[8:14], byteorder='little')
                 ril_msg = RilUnsolicitedResponse(command, header_len)
 
                 print('UNSOL(' + self.maybe_unknown(UNSOL[ril_msg.command]) +
@@ -237,6 +233,7 @@ class Dissector(object):
 
 def socket_copy(dissector, local, remote):
     ''' Copy content from to remote socket '''
+    # TODO option for verbose output
     rilproxy_buffer_size = 3000  # TODO 3000 is not a power of 2
     bytes_read = local.recv(rilproxy_buffer_size)
     local_name = local.getsockname()[0]
@@ -247,60 +244,62 @@ def socket_copy(dissector, local, remote):
             local_name, remote_name, local_name))
 
     # debug output for ehternet header
-    ethernet_header = bytes_read[0:14]
-    ethernet_destination = ':'.join('%02x' % x for x in ethernet_header[0:6])
-    ethernet_source = ':'.join('%02x' % x for x in ethernet_header[6:12])
-    ethertype = int.from_bytes(ethernet_header[12:14], byteorder='big')
+    # ethernet_header = bytes_read[0:14]
+    # ethernet_destination = ':'.join('%02x' % x for x in ethernet_header[0:6])
+    # ethernet_source = ':'.join('%02x' % x for x in ethernet_header[6:12])
+    # ethertype = int.from_bytes(ethernet_header[12:14], byteorder='big')
 
-    print('ETHERNET HEADER')
-    print(' destination MAC:', ethernet_destination)
-    print(' source MAC:     ', ethernet_source)
-    print(' EtherType:      ', ethertype)
+    # print('ETHERNET HEADER')
+    # print(' destination MAC:', ethernet_destination)
+    # print(' source MAC:     ', ethernet_source)
+    # print(' EtherType:      ', ethertype)
 
     # debug output for IP Header
     ip_header = bytes_read[14:34]
-    ip_protocol = bytes_read[9]
-    ip_source = socket.inet_ntoa(ip_header[12:16])
-    ip_destination = socket.inet_ntoa(ip_header[16:20])
+    ip_protocol = ip_header[9]
 
-    print('IP HEADER')
-    print(' protocol:      ', ip_protocol)
-    print(' source IP:     ', ip_source)
-    print(' destination IP:', ip_destination)
+    # print('IP HEADER')
+    # print(' time to live:  ', ip_header[8])
+    # print(' protocol:      ', ip_protocol)
+    # print(' checksum:      ', ip_header[10:12])
+    # print(' source IP:     ', socket.inet_ntoa(ip_header[12:16]))
+    # print(' destination IP:', socket.inet_ntoa(ip_header[16:20]))
     if ip_protocol == UDP:
         # debug output for UDP Header
         udp_header = bytes_read[34:42]
         udp_source = int.from_bytes(udp_header[0:2], byteorder='big')
-        udp_destination = int.from_bytes(udp_header[2:4], byteorder='big')
+        # udp_destination = int.from_bytes(udp_header[2:4], byteorder='big')
 
-        print('UDP HEADER')
-        print(' source port:     ', udp_source)
-        print(' destination port:', udp_destination)
-    elif ip_protocol == MOBILE:
-        # TODO debug output for IP Mobility Header
-        mobile_header = bytes_read[34:42]
+        # print('UDP HEADER')
+        # print(' source port:     ', udp_source)
+        # print(' destination port:', udp_destination)
 
-        print('MISC')
-        print('packet size:', len(bytes_read))
-        # TODO filter wrong port
+        if udp_source == RILPROXY_PORT:
+            # print('MISC')
+            # print('packet size:', len(bytes_read))
 
-        print('[{} -> {}] {}'.format(
-            local_name, remote_name, bytes_read))
+            # remove headers
+            udp_payload = bytes_read[42:]
 
-        # TODO remove headers
+            print('Verbose: [{} -> {}] {}'.format(
+                local_name, remote_name, udp_payload))
 
-        # TODO dissect the payload
-        # ril_msg = dissector.dissect(bytes_read, local_name)
-        # if ril_msg:
-        #     if dissector.validate(ril_msg):
-        #         bytes_written = remote.send(bytes_read)
-        # else:
+            # dissect the UDP payload
+            ril_msg = dissector.dissect(udp_payload, local_name)
+
+            if ril_msg:
+                if dissector.validate(ril_msg):
+                    bytes_written = remote.send(bytes_read)
+            else:  # TODO wait before sending concatenated package
+                print('CONTINUING: Payload was boring')
+                bytes_written = remote.send(bytes_read)
+        else:
+            print('CONTINUING:', udp_source, 'is incorrect port')
         bytes_written = remote.send(bytes_read)
     else:
-        print('CONTINUING: not UDP')
+        print('CONTINUING:', ip_protocol, 'is not UDP')
 
         bytes_written = remote.send(bytes_read)
-
     if bytes_written < 1:
         raise RuntimeError('[{} -> {}] socket connection broken'.format(
             local_name, remote_name))
