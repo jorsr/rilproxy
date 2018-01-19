@@ -109,7 +109,7 @@ class Dissector(object):
 
     def dissect(self, bfr, source):
         '''Dissect the RIL packets and return a RIL message object.'''
-        msg_len = len(bfr) * 8  # from bytes to bits
+        msg_len = len(bfr)
         print('DEBUG buffer length (raw):', msg_len)
         self.packet_num += 1
 
@@ -158,6 +158,7 @@ class Dissector(object):
         if msg_len <= (header_len - 4):
             self.bytes_missing = header_len - msg_len + 4
             b''.join([self.cache, bfr])
+            print('DEBUG caching the package')
 
             return None
         self.cache = bytearray()
