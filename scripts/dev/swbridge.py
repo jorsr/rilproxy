@@ -142,12 +142,12 @@ class Dissector(object):
         self.cache = bytearray()
 
         self.bytes_missing = 0
-        command_or_type = int.from_bytes(bfr[4:8], byteorder='little')
+        command_or_type = int.from_bytes(bfr[4:8], byteorder='big')
         print(command_or_type)
 
         if (source == 'ril0'):
             if (header_len > 4):
-                token = int.from_bytes(bfr[8:12], byteorder='little')
+                token = int.from_bytes(bfr[8:12], byteorder='big')
                 ril_msg = RilRequest(command_or_type, header_len, token)
 
                 print('REQUEST(' + self.maybe_unknown(REQUEST[ril_msg.command])
@@ -172,7 +172,7 @@ class Dissector(object):
 
                 return ril_msg
         elif source == 'enp0s29u1u4':
-            m_type = int.from_bytes(bfr[4:8], 'little')
+            m_type = int.from_bytes(bfr[4:8], 'big')
 
             if (m_type == self.M_TYPE_REPLY):
                 token = int.from_bytes(bfr[8:12])
@@ -198,7 +198,7 @@ class Dissector(object):
 
                 return ril_msg
             elif (m_type == self.M_TYPE_UNSOL):
-                command = int.from_bytes(bfr[8:14], byteorder='little')
+                command = int.from_bytes(bfr[8:14], byteorder='big')
                 ril_msg = RilUnsolicitedResponse(command, header_len)
 
                 print('UNSOL(' + self.maybe_unknown(UNSOL[ril_msg.command]) +

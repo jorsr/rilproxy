@@ -5,13 +5,15 @@ from subprocess import run, PIPE
 from swbridge import main
 from time import sleep
 
+VM = 'Componolit'
 REBOOT_CMD = 'adb reboot'
 GETPROP_CMD = 'adb shell getprop sys.boot_completed'
-STARTVM_CMD = 'VBoxManage startvm Componolit'
+STARTVM_CMD = 'VBoxManage startvm '
 
+run(split('VBoxManage controlvm ' + VM + ' poweroff'))
 run(split(REBOOT_CMD))
 sleep(13)  # Wait 10 seconds for restart
 while run(split(GETPROP_CMD), stdout=PIPE).stdout != b'1\n':
     sleep(1)
-run(split(STARTVM_CMD))
+run(split(STARTVM_CMD + VM))
 main()
