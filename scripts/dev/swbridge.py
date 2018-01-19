@@ -85,8 +85,13 @@ class Dissector(object):
     # Constants
     REQUEST_SETUP = 0xc715
     REQUEST_TEARDOWN = 0xc717
-    M_TYPE_REPLY = 0
-    M_TYPE_UNSOL = 1
+
+    # Constants for response types from libril/ril.cpp
+    RESPONSE_SOLICITED = 0
+    RESPONSE_UNSOLICITED = 1
+    RESPONSE_SOLICITED_ACK = 2
+    RESPONSE_SOLICITED_ACK_EXP = 3
+    RESPONSE_UNSOLICITED_ACK_EXP = 4
 
     # Globals
     bytes_missing = 0
@@ -188,10 +193,18 @@ class Dissector(object):
             # TODO Why is type sometimes 4?
             m_type = int.from_bytes(bfr[4:8], byteorder='little')
 
-            if (m_type == self.M_TYPE_REPLY):
-                print('DEBUG RIL REPLY PACKET')
+            if (m_type in [self.RESPONSE_SOLICITED,
+                           self.RESPONSE_SOLICITED_ACK_EXP]):
+                print('DEBUG RIL SOLICITED PACKET')
                 print('DEBUG  length: ', header_len)
-                print('DEBUG  type:   OnRequestComplete')
+
+                type_str = ''
+
+                if m_type == self.RESPONSE_SOLICITED:
+                    type_str = 'normal'
+                elif m_type == self.RESPONSE_SOLICITED_ACK_EXP:
+                    type_str = 'expect ACK'
+                print('DEBUG  type:   ', type_str)
 
                 token = int.from_bytes(bfr[8:12], byteorder='little')
                 print('DEBUG  token:  ', token)
@@ -218,14 +231,22 @@ class Dissector(object):
                 #   subtree)
 
                 return ril_msg
-            elif (m_type == self.M_TYPE_UNSOL):
-                print('DEBUG RIL UNSOL PACKET')
+            elif (m_type in [self.RESPONSE_UNSOLICITED,
+                             self.RESPONSE_UNSOLICITED_ACK_EXP]):
+                print('DEBUG RIL UNSOLICITED PACKET')
                 print('DEBUG  length: ', header_len)
-                print('DEBUG  type:   OnUnsolicitedResponse')
+
+                type_str = ''
+
+                if m_type == self.RESPONSE_UNSOLICITED:
+                    type_str = 'normal'
+                elif m_type == self.RESPONSE_UNSOLICITED_ACK_EXP:
+                    type_str = 'expect ACK'
+                print('DEBUG  type:   ', type_str)
 
                 command = int.from_bytes(bfr[8:14], byteorder='little')
 
-                print('DEBUG  command:', maybe_unknown(UNSOL, ril_msg.command))
+                print('DEBUG  command:', maybe_unknown(UNSOL, command))
 
                 ril_msg = RilUnsolicitedResponse(command, header_len)
 
@@ -235,6 +256,18 @@ class Dissector(object):
                 #     subtree)
 
                 return ril_msg
+            elif (m_type == self.RESPONSE_SOLICITED_ACK):
+                print('DEBUG RIL SOLICITED ACK PACKET')
+                print('DEBUG  length: ', header_len)
+
+                # TODO hope this is the right field
+                token = int.from_bytes(bfr[8:12], byteorder='little')
+
+                print('DEBUG  token:  ', token)
+
+            elif (m_type == self.RESPONSE_SOLICITED_ACK_EXP):
+                print('DEBUG RIL SOLICITED ACK EXP PACKET')
+                print('DEBUG  length: ', header_len)
             else:
                 print('WARNING wrong packet type', m_type)
         else:
