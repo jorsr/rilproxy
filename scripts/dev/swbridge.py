@@ -67,8 +67,13 @@ class RilUnsolicitedResponse(RilMessage):
 
 def maybe_unknown(dictionary, value):
     '''Return "unknown" for NULL values'''
+    # Constants defined by ril.h FIXME define it somewhere reasonable
+    RIL_RESPONSE_ACKNOWLEDGEMENT = 800
+
     if value in dictionary.keys():
         return dictionary[value]
+    elif value == RIL_RESPONSE_ACKNOWLEDGEMENT:
+        return 'RESPONSE_ACKNOWLEDGEMENT'
     return str(value) + ' is unknown'
 
 
@@ -82,11 +87,11 @@ class Dissector(object):
     Based on the Lua Wireshark dissector by Componolit and merged with my own
     validator.
     '''
-    # Constants
+    # Constants defined by rilproxy
     REQUEST_SETUP = 0xc715
     REQUEST_TEARDOWN = 0xc717
 
-    # Constants for response types from libril/ril.cpp
+    # Constants for response types defined by libril/ril.cpp
     RESPONSE_SOLICITED = 0
     RESPONSE_UNSOLICITED = 1
     RESPONSE_SOLICITED_ACK = 2
@@ -246,6 +251,7 @@ class Dissector(object):
 
                 command = int.from_bytes(bfr[8:14], byteorder='little')
 
+                # TODO Does not seem to be correct for ACK_EXP
                 print('DEBUG  command:', maybe_unknown(UNSOL, command))
 
                 ril_msg = RilUnsolicitedResponse(command, header_len)
