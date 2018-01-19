@@ -13,3 +13,5 @@ sudo tunctl -t ${APIF}
 
 sudo ip link set up ${BPIF}
 sudo ip link set up ${APIF}
+
+sudo setcap cap_net_raw=eip /usr/bin/python3.6

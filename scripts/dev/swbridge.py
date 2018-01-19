@@ -143,6 +143,7 @@ class Dissector(object):
 
         self.bytes_missing = 0
         command_or_type = int.from_bytes(bfr[4:8], byteorder='little')
+        print(command_or_type)
 
         if (source == 'ril0'):
             if (header_len > 4):
@@ -196,7 +197,7 @@ class Dissector(object):
                 #   subtree)
 
                 return ril_msg
-            elif (ril_msg.m_type == self.M_TYPE_UNSOL):
+            elif (m_type == self.M_TYPE_UNSOL):
                 command = int.from_bytes(bfr[8:14], byteorder='little')
                 ril_msg = RilUnsolicitedResponse(command, header_len)
 
@@ -308,41 +309,44 @@ def socket_copy(dissector, local, remote):
             local_name, remote_name, len(bytes_read), bytes_written))
 
 
-# Open sockets
-# NOTE capabilities would need to be set on python binary or be ambient
-# TODO Is DGRAM better?
-# TODO Is no Protocol better?
-local = socket.socket(socket.AF_PACKET, socket.SOCK_RAW,
-                      socket.htons(ETH_P_ALL))
-remote = socket.socket(socket.AF_PACKET, socket.SOCK_RAW,
-                       socket.htons(ETH_P_ALL))
+def main():
+    '''Create sockets. Proxy all packets and validate RIL packets.'''
+    # Open sockets
+    local = socket.socket(socket.AF_PACKET, socket.SOCK_RAW,
+                          socket.htons(ETH_P_ALL))
+    remote = socket.socket(socket.AF_PACKET, socket.SOCK_RAW,
+                           socket.htons(ETH_P_ALL))
 
-local.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,
-                 1)
-local.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE,
-                 str('ril0' + '\0').encode('utf-8'))
-local.bind(('ril0', 0))  # TODO maybe use the correct port here?
-remote.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,
-                  1)
-remote.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE,
-                  str('enp0s29u1u4' + '\0').encode('utf-8'))
-remote.bind(('enp0s29u1u4', 0))
+    local.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,
+                     1)
+    local.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE,
+                     str('ril0' + '\0').encode('utf-8'))
+    local.bind(('ril0', 0))  # TODO maybe use the correct port here?
+    remote.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,
+                      1)
+    remote.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE,
+                      str('enp0s29u1u4' + '\0').encode('utf-8'))
+    remote.bind(('enp0s29u1u4', 0))
 
-# Proxy it
-sel = selectors.DefaultSelector()
-dissector = Dissector()
+    # Proxy it
+    sel = selectors.DefaultSelector()
+    dissector = Dissector()
 
-sel.register(local, selectors.EVENT_READ)
-sel.register(remote, selectors.EVENT_READ)
-while True:
-    print('...')
-    events = sel.select()
-    for key, mask in events:
-        if key.fileobj is local:
-            socket_copy(dissector, local, remote)
-        else:
-            socket_copy(dissector, remote, local)
+    sel.register(local, selectors.EVENT_READ)
+    sel.register(remote, selectors.EVENT_READ)
+    while True:
+        print('...')
+        events = sel.select()
+        for key, mask in events:
+            if key.fileobj is local:
+                socket_copy(dissector, local, remote)
+            else:
+                socket_copy(dissector, remote, local)
 
-# Close sockets
-local.close()
-remote.close()
+    # Close sockets
+    local.close()
+    remote.close()
+
+
+if __name__ == '__main__':
+    main()
