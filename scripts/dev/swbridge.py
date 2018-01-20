@@ -34,8 +34,8 @@ class RilRequest(RilMessage):
         super().__init__(length)
 
 
-class RilReply(RilMessage):
-    '''A RIL Reply.
+class RilSolicitedResponse(RilMessage):
+    '''A RIL Solicited Response to a RIL Request.
     The fields are:
      * Length
      * M_Type (always 0)
@@ -104,7 +104,7 @@ class Dissector(object):
     last_token = 0  # from possibly further away
     request_num = 0  # from possibly further away
     requests = {}  # from further away
-    pending_requests = {}  # from further away
+    pending_requests = []  # from further away
     packet_num = 0
 
     def dissect(self, bfr, source):
@@ -159,7 +159,7 @@ class Dissector(object):
             return None
         if msg_len <= (header_len - 4):
             self.bytes_missing = header_len - msg_len + 4
-            b''.join([self.cache, bfr])
+            self.cache = b''.join([self.cache, bfr])
             print('DEBUG caching the package')
             print('DEBUG cache:', self.cache)
 
@@ -172,7 +172,7 @@ class Dissector(object):
 
         if (source == 'ril0'):
             # TODO Why are there unknown commands?
-            print('DEBUG RIL REQUEST PACKET')
+            print('DEBUG RIL REQUEST')
             print('DEBUG  length: ', header_len)
             print('DEBUG  command:', maybe_unknown(REQUEST, command_or_type))
             if (header_len > 4):
@@ -185,7 +185,7 @@ class Dissector(object):
                     'command': ril_msg.command,
                     'request_num': self.request_num
                 }
-                self.pending_requests[ril_msg.token] = 1
+                self.pending_requests.append(ril_msg.token)
 
                 if ril_msg.token - self.last_token > 0:
                     print('DEBUG token delta', ril_msg.token -
@@ -202,12 +202,11 @@ class Dissector(object):
 
             if (m_type in [self.RESPONSE_SOLICITED,
                            self.RESPONSE_SOLICITED_ACK_EXP]):
-                print('DEBUG RIL SOLICITED PACKET')
-                print('DEBUG  length: ', header_len)
                 if m_type == self.RESPONSE_SOLICITED:
-                    print('DEBUG  type:   normal')
+                    print('DEBUG RIL SOLICITED RESPONSE')
                 elif m_type == self.RESPONSE_SOLICITED_ACK_EXP:
-                    print('DEBUG  type:   expect ACK')
+                    print('DEBUG RIL SOLICITED RESPONSE (expect ACK)')
+                print('DEBUG  length: ', header_len)
 
                 token = int.from_bytes(bfr[8:12], byteorder='little')
 
@@ -219,11 +218,11 @@ class Dissector(object):
 
                 request = self.requests[token]
                 request_delta = self.request_num - request['request_num']
-                ril_msg = RilReply(error, request['command'], header_len,
-                                   request['request_num'], token)
+                ril_msg = RilSolicitedResponse(request['command'], error,
+                                               header_len,
+                                               request['request_num'], token)
 
-                del self.pending_requests[token]
-
+                self.pending_requests.remove(ril_msg.token)
                 print('DEBUG  command:',
                       maybe_unknown(REQUEST, ril_msg.command))
                 print('DEBUG packets until reply', request_delta)
@@ -234,12 +233,11 @@ class Dissector(object):
                 #   subtree)
             elif (m_type in [self.RESPONSE_UNSOLICITED,
                              self.RESPONSE_UNSOLICITED_ACK_EXP]):
-                print('DEBUG RIL UNSOLICITED PACKET')
-                print('DEBUG  length: ', header_len)
                 if m_type == self.RESPONSE_UNSOLICITED:
-                    print('DEBUG  type:   normal')
+                    print('DEBUG RIL UNSOLICITED RESPONSE')
                 elif m_type == self.RESPONSE_UNSOLICITED_ACK_EXP:
-                    print('DEBUG  type:   expect ACK')
+                    print('DEBUG RIL UNSOLICITED RESPONSE (expect ACK)')
+                print('DEBUG  length: ', header_len)
 
                 command = int.from_bytes(bfr[8:12], byteorder='little')
 
@@ -252,16 +250,12 @@ class Dissector(object):
                 #     dissector:call(bfr(12, header_len - 12 + 4):tvb(), info,
                 #     subtree)
             elif (m_type == self.RESPONSE_SOLICITED_ACK):
-                print('DEBUG RIL SOLICITED ACK PACKET')
+                print('DEBUG RIL SOLICITED RESPONSE (ACK)')
                 print('DEBUG  length: ', header_len)
 
-                # TODO hope this is the right field
                 token = int.from_bytes(bfr[8:12], byteorder='little')
 
                 print('DEBUG  token:  ', token)
-            elif (m_type == self.RESPONSE_SOLICITED_ACK_EXP):
-                print('DEBUG RIL SOLICITED ACK EXP PACKET')
-                print('DEBUG  length: ', header_len)
             else:
                 print('WARNING wrong packet type', m_type)
         else:
