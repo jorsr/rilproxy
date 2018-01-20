@@ -67,13 +67,8 @@ class RilUnsolicitedResponse(RilMessage):
 
 def maybe_unknown(dictionary, value):
     '''Return "unknown" for NULL values'''
-    # Constants defined by ril.h FIXME define it somewhere reasonable
-    RIL_RESPONSE_ACKNOWLEDGEMENT = 800
-
     if value in dictionary.keys():
         return dictionary[value]
-    elif value == RIL_RESPONSE_ACKNOWLEDGEMENT:
-        return 'RESPONSE_ACKNOWLEDGEMENT'
     return str(value) + ' is unknown'
 
 
@@ -87,9 +82,15 @@ class Dissector(object):
     Based on the Lua Wireshark dissector by Componolit and merged with my own
     validator.
     '''
-    # Constants defined by rilproxy
+    # Inset custom rilproxy request constants
     REQUEST_SETUP = 0xc715
     REQUEST_TEARDOWN = 0xc717
+    REQUEST[REQUEST_SETUP] = "SETUP"
+    REQUEST[REQUEST_TEARDOWN] = "TEARDOWN"
+
+    # Inset additional constant defined by ril.h
+    RIL_RESPONSE_ACKNOWLEDGEMENT = 800
+    REQUEST[RIL_RESPONSE_ACKNOWLEDGEMENT] = "RESPONSE_ACKNOWLEDGEMENT"
 
     # Constants for response types defined by libril/ril.cpp
     RESPONSE_SOLICITED = 0
@@ -107,11 +108,20 @@ class Dissector(object):
     pending_requests = []  # from last few Requests
     packet_num = 0  # from last packet
 
+    def logd(self, msg):
+        print('DEBUG [{}] {}'.format(self.packet_num, msg))
+
+    def logw(self, msg):
+        print('WARNING [{}] {}'.format(self.packet_num, msg))
+
+    def logi(self, msg):
+        print('INFO [{}] {}'.format(self.packet_num, msg))
+
     def dissect(self, bfr, source):
-        '''Dissect the RIL packets and return a RIL message object.'''
+        '''Dissect the RIL packets and return a list of RIL message objects.'''
         msg_len = len(bfr)
-        print('DEBUG buffer length (raw):', msg_len)
         self.packet_num += 1
+        self.logd('buffer length (raw):', msg_len)
 
         # Follow-up to a message where length header indicates more bytes than
         # available in the message.
@@ -119,13 +129,13 @@ class Dissector(object):
             self.cache = b''.join([self.cache, bfr])
             self.bytes_missing = self.bytes_missing - msg_len
 
-            print('DEBUG buffer length (reassembled)', msg_len)
+            self.logd('buffer length (reassembled)', msg_len)
 
             # Still fragments missing, wait for next packet
             if self.bytes_missing > 0:
-                print('DEBUG caching the package again')
+                self.logd('caching the package again')
 
-                return None
+                return []
 
             bfr = self.cache
             self.cache = bytearray()
@@ -137,54 +147,55 @@ class Dissector(object):
 
         # Message must be at least 4 bytes
         if msg_len < 4:
-            print('WARNING [' + self.packet_num +
-                  '] Dropping short buffer of length', msg_len)
+            self.logw('dropping short buffer of length', msg_len)
 
-            return None
+            return []
 
         header_len = int.from_bytes(bfr[0:4], byteorder='big')
 
         if header_len < 4:
-            print('WARNING [{}] Dropping short header length of {}'.format(
-                self.packet_num, header_len))
+            self.logw('dropping short header length of', header_len)
 
-            return None
+            return []
 
         #  FIXME: Upper limit?
         if header_len > 3000:
-            print('WARNING [{}] Skipping long buffer of length {}'.format(
-                self.packet_num, header_len))
+            self.logw('skipping long buffer of length', header_len)
             self.bytes_missing = 0
             self.cache = bytearray()
             self.cached_source = ''
 
-            return None
+            return []
         if msg_len <= (header_len - 4):
             self.bytes_missing = header_len - msg_len + 4
             self.cache = b''.join([self.cache, bfr])
             self.cached_source = source
-            print('DEBUG caching the package')
-            print('DEBUG cache:', self.cache)
+            self.logd('caching the package')
+            self.logd('cache:', self.cache)
 
-            return None
+            return []
+
+        # FIXME remove these 3 lines
+        print('Clearing cache', self.cache, self.cached_source)
         self.cache = bytearray()
         self.cached_source = ''
 
         self.bytes_missing = 0
         command_or_type = int.from_bytes(bfr[4:8], byteorder='little')
-        ril_msg = RilMessage(header_len)
+        ril_msgs = []
 
         if (source == 'ril0'):
             # TODO Why are there unknown commands?
-            print('DEBUG RIL REQUEST')
-            print('DEBUG  length: ', header_len)
-            print('DEBUG  command:', maybe_unknown(REQUEST, command_or_type))
+            self.logd('RIL REQUEST')
+            self.logd(' length: ', header_len)
+            self.logd(' command:', maybe_unknown(REQUEST, command_or_type))
             if (header_len > 4):
                 token = int.from_bytes(bfr[8:12], byteorder='little')
 
-                print('DEBUG  token:  ', token)
+                self.logd(' token:  ', token)
 
                 ril_msg = RilRequest(command_or_type, header_len, token)
+                ril_msgs.append(ril_msg)
                 self.requests[ril_msg.token] = {
                     'command': ril_msg.command,
                     'request_num': self.request_num
@@ -192,8 +203,7 @@ class Dissector(object):
                 self.pending_requests.append(ril_msg.token)
 
                 if ril_msg.token - self.last_token > 0:
-                    print('DEBUG token delta', ril_msg.token -
-                          self.last_token)
+                    self.logd('token delta', ril_msg.token - self.last_token)
 
                 self.last_token = ril_msg.token
 
@@ -207,29 +217,29 @@ class Dissector(object):
             if (m_type in [self.RESPONSE_SOLICITED,
                            self.RESPONSE_SOLICITED_ACK_EXP]):
                 if m_type == self.RESPONSE_SOLICITED:
-                    print('DEBUG RIL SOLICITED RESPONSE')
+                    self.logd('RIL SOLICITED RESPONSE')
                 elif m_type == self.RESPONSE_SOLICITED_ACK_EXP:
-                    print('DEBUG RIL SOLICITED RESPONSE (expect ACK)')
-                print('DEBUG  length: ', header_len)
+                    self.logd('RIL SOLICITED RESPONSE (expect ACK)')
+                self.logd(' length: ', header_len)
 
                 token = int.from_bytes(bfr[8:12], byteorder='little')
 
-                print('DEBUG  token:  ', token)
+                self.logd(' token:  ', token)
 
                 error = int.from_bytes(bfr[12:16], byteorder='little')
 
-                print('DEBUG  error:  ', maybe_unknown(ERRNO, error))
+                self.logd(' error:  ', maybe_unknown(ERRNO, error))
 
                 request = self.requests[token]
                 request_delta = self.request_num - request['request_num']
                 ril_msg = RilSolicitedResponse(request['command'], error,
                                                header_len,
                                                request['request_num'], token)
+                ril_msgs.append(ril_msg)
 
                 self.pending_requests.remove(ril_msg.token)
-                print('DEBUG  command:',
-                      maybe_unknown(REQUEST, ril_msg.command))
-                print('DEBUG packets until reply', request_delta)
+                self.logd(' command:', maybe_unknown(REQUEST, ril_msg.command))
+                self.logd('packets until reply', request_delta)
 
                 # TODO handle data
                 # if (header_len > 12):
@@ -238,40 +248,43 @@ class Dissector(object):
             elif (m_type in [self.RESPONSE_UNSOLICITED,
                              self.RESPONSE_UNSOLICITED_ACK_EXP]):
                 if m_type == self.RESPONSE_UNSOLICITED:
-                    print('DEBUG RIL UNSOLICITED RESPONSE')
+                    self.logd('RIL UNSOLICITED RESPONSE')
                 elif m_type == self.RESPONSE_UNSOLICITED_ACK_EXP:
-                    print('DEBUG RIL UNSOLICITED RESPONSE (expect ACK)')
-                print('DEBUG  length: ', header_len)
+                    self.logd('RIL UNSOLICITED RESPONSE (expect ACK)')
+                self.logd(' length: ', header_len)
 
                 command = int.from_bytes(bfr[8:12], byteorder='little')
 
-                print('DEBUG  command:', maybe_unknown(UNSOL, command))
+                self.logd(' command:', maybe_unknown(UNSOL, command))
 
                 ril_msg = RilUnsolicitedResponse(command, header_len)
+                ril_msgs.append(ril_msg)
 
                 # TODO handle data
                 # if (header_len > 8):
                 #     dissector:call(bfr(12, header_len - 12 + 4):tvb(), info,
                 #     subtree)
             elif (m_type == self.RESPONSE_SOLICITED_ACK):
-                print('DEBUG RIL SOLICITED RESPONSE (ACK)')
-                print('DEBUG  length: ', header_len)
+                self.logd('RIL SOLICITED RESPONSE (ACK)')
+                self.logd(' length: ', header_len)
 
                 token = int.from_bytes(bfr[8:12], byteorder='little')
 
-                print('DEBUG  token:  ', token)
+                self.logd(' token:  ', token)
             else:
-                print('WARNING wrong packet type', m_type)
+                self.logw('wrong packet type', m_type)
         else:
-            print('WARNING invalid direction')
-        print('In-flight requests', len(self.pending_requests))
+            self.logw('invalid direction')
+        self.logi('In-flight requests', len(self.pending_requests))
 
         # If data is left in buffer, run dissector on it
         if msg_len > header_len + 4:
-            # TODO Handle
-            print('WARNING data left in buffer')
+            self.logi('..running dissector again..')
+            additional_ril_msgs = self.dissect(bfr[header_len + 4:], source)
+            for msg in additional_ril_msgs:
+                ril_msgs.append(msg)
 
-        return ril_msg
+        return ril_msgs
 
 
 def socket_copy(dissector, local, remote):
@@ -331,12 +344,12 @@ def socket_copy(dissector, local, remote):
                 local_name, remote_name, udp_payload))
 
             # dissect the UDP payload
-            ril_msg = dissector.dissect(udp_payload, local_name)
+            ril_msgs = dissector.dissect(udp_payload, local_name)
 
-            if ril_msg:
+            for ril_msg in ril_msgs:
                 if validate(ril_msg):
                     bytes_written = remote.send(bytes_read)
-            else:  # TODO wait before sending concatenated package
+            if ril_msgs == []:  # TODO wait before sending concatenated package
                 print('Continuing: Payload was boring')
                 bytes_written = remote.send(bytes_read)
         else:
