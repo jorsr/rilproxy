@@ -98,14 +98,14 @@ class Dissector(object):
     RESPONSE_SOLICITED_ACK_EXP = 3
     RESPONSE_UNSOLICITED_ACK_EXP = 4
 
-    # Globals
     bytes_missing = 0
-    cache = bytearray()  # from last run (if all packets get sent in order)
-    last_token = 0  # from possibly further away
-    request_num = 0  # from possibly further away
-    requests = {}  # from further away
-    pending_requests = []  # from further away
-    packet_num = 0
+    cache = bytearray()  # from last run of same direction
+    cached_source = ''  # from last cached packet
+    last_token = 0  # from last Request
+    request_num = 0  # from last Request
+    requests = {}  # all Requests
+    pending_requests = []  # from last few Requests
+    packet_num = 0  # from last packet
 
     def dissect(self, bfr, source):
         '''Dissect the RIL packets and return a RIL message object.'''
@@ -115,24 +115,25 @@ class Dissector(object):
 
         # Follow-up to a message where length header indicates more bytes than
         # available in the message.
-        if self.bytes_missing > 0:
+        if self.bytes_missing > 0 and self.cached_source == source:
             self.cache = b''.join([self.cache, bfr])
             self.bytes_missing = self.bytes_missing - msg_len
+
+            print('DEBUG buffer length (reassembled)', msg_len)
 
             # Still fragments missing, wait for next packet
             if self.bytes_missing > 0:
                 print('DEBUG caching the package again')
+
                 return None
 
             bfr = self.cache
             self.cache = bytearray()
+            self.cached_source = ''
             msg_len = len(bfr)
 
         # Advance request counter
         self.request_num = self.request_num + 1
-
-        # TODO is this the correct place?
-        print('DEBUG buffer length (reassembled)', msg_len)
 
         # Message must be at least 4 bytes
         if msg_len < 4:
@@ -155,16 +156,19 @@ class Dissector(object):
                 self.packet_num, header_len))
             self.bytes_missing = 0
             self.cache = bytearray()
+            self.cached_source = ''
 
             return None
         if msg_len <= (header_len - 4):
             self.bytes_missing = header_len - msg_len + 4
             self.cache = b''.join([self.cache, bfr])
+            self.cached_source = source
             print('DEBUG caching the package')
             print('DEBUG cache:', self.cache)
 
             return None
         self.cache = bytearray()
+        self.cached_source = ''
 
         self.bytes_missing = 0
         command_or_type = int.from_bytes(bfr[4:8], byteorder='little')
