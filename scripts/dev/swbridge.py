@@ -121,10 +121,12 @@ class Dissector(object):
 
             # Still fragments missing, wait for next packet
             if self.bytes_missing > 0:
+                print('DEBUG caching the package again')
                 return None
 
             bfr = self.cache
             self.cache = bytearray()
+            msg_len = len(bfr)
 
         # Advance request counter
         self.request_num = self.request_num + 1
@@ -159,6 +161,7 @@ class Dissector(object):
             self.bytes_missing = header_len - msg_len + 4
             b''.join([self.cache, bfr])
             print('DEBUG caching the package')
+            print('DEBUG cache:', self.cache)
 
             return None
         self.cache = bytearray()
@@ -171,7 +174,6 @@ class Dissector(object):
             # TODO Why are there unknown commands?
             print('DEBUG RIL REQUEST PACKET')
             print('DEBUG  length: ', header_len)
-            print('DEBUG  command:', bfr[4:8])
             print('DEBUG  command:', maybe_unknown(REQUEST, command_or_type))
             if (header_len > 4):
                 token = int.from_bytes(bfr[8:12], byteorder='little')
@@ -196,7 +198,6 @@ class Dissector(object):
                 #    dissector:call(bfr[12, header_len - 12 + 4]:tvb(), info,
                 #    subtree)
         elif source == 'enp0s29u1u4':
-            # TODO Why is type sometimes 4?
             m_type = int.from_bytes(bfr[4:8], byteorder='little')
 
             if (m_type in [self.RESPONSE_SOLICITED,
@@ -218,11 +219,10 @@ class Dissector(object):
 
                 request = self.requests[token]
                 request_delta = self.request_num - request['request_num']
-
-                del self.pending_requests[token]
-
                 ril_msg = RilReply(error, request['command'], header_len,
                                    request['request_num'], token)
+
+                del self.pending_requests[token]
 
                 print('DEBUG  command:',
                       maybe_unknown(REQUEST, ril_msg.command))
@@ -313,11 +313,11 @@ def socket_copy(dissector, local, remote):
         # debug output for UDP Header
         udp_header = bytes_read[34:42]
         udp_source = int.from_bytes(udp_header[0:2], byteorder='big')
-        udp_destination = int.from_bytes(udp_header[2:4], byteorder='big')
+        # udp_destination = int.from_bytes(udp_header[2:4], byteorder='big')
 
-        print('VERBOSE UDP HEADER')
-        print('VERBOSE  source port:     ', udp_source)
-        print('VERBOSE  destination port:', udp_destination)
+        # print('VERBOSE UDP HEADER')
+        # print('VERBOSE  source port:     ', udp_source)
+        # print('VERBOSE  destination port:', udp_destination)
         # print('VERBOSE  length:          ',
         #       int.from_bytes(udp_header[4:6], byteorder='big'))
         # print('VERBOSE  checksum:        ', udp_header[6:8])
@@ -329,7 +329,7 @@ def socket_copy(dissector, local, remote):
             # remove headers
             udp_payload = bytes_read[42:]
 
-            print('VERBOSE [{} -> {}] {}'.format(
+            print('DEBUG [{} -> {}] {}'.format(
                 local_name, remote_name, udp_payload))
 
             # dissect the UDP payload
