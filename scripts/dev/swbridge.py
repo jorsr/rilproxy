@@ -74,8 +74,8 @@ def maybe_unknown(dictionary, value):
 
 
 def validate(ril_msg):
-    ''' Run through verifier '''
-    pass
+    ''' TODO Run through verifier '''
+    return True
 
 
 class Dissector(object):
@@ -101,31 +101,32 @@ class Dissector(object):
     RESPONSE_UNSOLICITED_ACK_EXP = 4
 
     bytes_missing = 0
-    cache = bytearray()  # from last run of same direction
-    cached_source = ''  # from last cached packet
-    last_token = 0  # from last Request
-    request_num = 0  # from last Request
-    requests = {}  # all Requests
-    pending_requests = []  # from last few Requests
+    cache = {}  # from last packet of AP or BP
+    last_token = 0  # from last request
+    request_num = 0  # from last request
+    requests = {}  # all requests
+    pending_requests = []  # from last few requests
     packet_num = 0  # from last packet
 
     def dissect(self, bfr, source):
         '''Dissect the RIL packets and return a list of RIL message objects.'''
         msg_len = len(bfr)
         self.packet_num += 1
-        fmt_num = '[' + str(self.packet_num) + '] %s: %s'
-        fmt_pkt = '[' + str(self.packet_num) + ']  %s:\t%s'
-        fmt_none = '[' + str(self.packet_num) + '] %s'
+        fmt_num = '\t[' + str(self.packet_num) + '] %s: %s'
+        fmt_pkt = '\t[' + str(self.packet_num) + ']  %s:\t%s'
+        fmt_none = '\t[' + str(self.packet_num) + '] %s'
 
         debug(fmt_num, 'buffer length (raw)', msg_len)
 
         # Follow-up to a message where length header indicates more bytes than
         # available in the message.
-        if self.bytes_missing > 0 and self.cached_source == source:
-            self.cache = b''.join([self.cache, bfr])
+        print(self.cache)
+        if self.bytes_missing > 0 and source in self.cache:
+            self.cache[source] = b''.join([self.cache, bfr])
             self.bytes_missing = self.bytes_missing - msg_len
 
-            debug(fmt_num, 'buffer length (reassembled)', len(self.cache))
+            debug(fmt_num, 'buffer length (reassembled)',
+                  len(self.cache[source]))
 
             # Still fragments missing, wait for next packet
             if self.bytes_missing > 0:
@@ -133,10 +134,10 @@ class Dissector(object):
 
                 return []
 
-            bfr = self.cache
-            self.cache = bytearray()
-            self.cached_source = ''
+            bfr = self.cache[source]
             msg_len = len(bfr)
+
+            del self.cache[source]
 
         # Advance request counter
         self.request_num = self.request_num + 1
@@ -158,23 +159,23 @@ class Dissector(object):
         if header_len > 3000:
             warning(fmt_num, 'skipping long buffer of length', header_len)
             self.bytes_missing = 0
-            self.cache = bytearray()
-            self.cached_source = ''
+
+            del self.cache[source]
 
             return []
         if msg_len <= (header_len - 4):
             self.bytes_missing = header_len - msg_len + 4
-            self.cache = b''.join([self.cache, bfr])
-            self.cached_source = source
+            self.cache[source] = b''.join([self.cache[source], bfr])
             debug(fmt_none, 'caching the package')
             debug(fmt_num, 'cache', self.cache)
 
             return []
 
         # FIXME remove these 3 lines
-        print('Clearing cache', self.cache, self.cached_source)
-        self.cache = bytearray()
-        self.cached_source = ''
+        if source in self.cache:
+            warning(fmt_num, 'Clearing cache', self.cache[source])
+
+            del self.cache[source]
 
         self.bytes_missing = 0
         command_or_type = int.from_bytes(bfr[4:8], byteorder='little')
@@ -234,7 +235,7 @@ class Dissector(object):
                                                request['request_num'], token)
                 ril_msgs.append(ril_msg)
 
-                self.pending_requests.remove(ril_msg.token)
+                self.pending_requests.remove(ril_msg.token)  # FIXME error here
                 debug(fmt_pkt, 'command', maybe_unknown(REQUEST,
                                                         ril_msg.command))
                 debug(fmt_num, 'packets until reply', request_delta)
@@ -277,15 +278,12 @@ class Dissector(object):
 
         # If data is left in buffer, run dissector on it
         if msg_len > header_len + 4:
-            print('..running dissector again..')
+            info('..running dissector again..')
             additional_ril_msgs = self.dissect(bfr[header_len + 4:], source)
             for msg in additional_ril_msgs:
                 ril_msgs.append(msg)
 
         return ril_msgs
-
-    def __init__(self):
-        basicConfig(format='%(levelname)s %(message)s', level=DEBUG)
 
 
 def socket_copy(dissector, local, remote):
@@ -341,7 +339,7 @@ def socket_copy(dissector, local, remote):
             # remove headers
             udp_payload = bytes_read[42:]
 
-            print('DEBUG [{} -> {}] {}'.format(
+            debug('[{} -> {}] {}'.format(
                 local_name, remote_name, udp_payload))
 
             # dissect the UDP payload
@@ -350,14 +348,18 @@ def socket_copy(dissector, local, remote):
             for ril_msg in ril_msgs:
                 if validate(ril_msg):
                     bytes_written = remote.send(bytes_read)
+                else:
+                    msg = '[{} -> {}] unnacceptable parcel {}'.format(
+                        local_name, remote_name, ril_msg)
+                    raise RuntimeError(msg)
             if ril_msgs == []:  # TODO wait before sending concatenated package
-                print('Continuing: Payload was boring')
+                info('Continuing: payload was boring')
                 bytes_written = remote.send(bytes_read)
         else:
-            print('Continuing:', udp_source, 'is incorrect port')
+            info('Continuing: %s is incorrect port', udp_source)
         bytes_written = remote.send(bytes_read)
     else:
-        print('Continuing:', ip_protocol, 'is not UDP')
+        info('Continuing: %s is not UDP', ip_protocol)
 
         bytes_written = remote.send(bytes_read)
     if bytes_written < 1:
@@ -370,6 +372,10 @@ def socket_copy(dissector, local, remote):
 
 def main():
     '''Create sockets. Proxy all packets and validate RIL packets.'''
+
+    # Init logger
+    basicConfig(format='%(levelname)s %(message)s', level=DEBUG)
+
     # Open sockets
     local = socket.socket(socket.AF_PACKET, socket.SOCK_RAW,
                           socket.htons(ETH_P_ALL))
@@ -394,7 +400,7 @@ def main():
     sel.register(local, selectors.EVENT_READ)
     sel.register(remote, selectors.EVENT_READ)
     while True:
-        print('...')
+        info('...')
         events = sel.select()
         for key, mask in events:
             if key.fileobj is local:
