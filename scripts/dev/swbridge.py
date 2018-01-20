@@ -114,6 +114,7 @@ class Dissector(object):
         msg_len = len(bfr)
         self.packet_num += 1
         fmt_num = '[' + str(self.packet_num) + '] %s: %s'
+        fmt_pkt = '[' + str(self.packet_num) + ']  %s:\t%s'
         fmt_none = '[' + str(self.packet_num) + '] %s'
 
         debug(fmt_num, 'buffer length (raw)', msg_len)
@@ -182,12 +183,12 @@ class Dissector(object):
         if (source == 'ril0'):
             # TODO Why are there unknown commands?
             debug(fmt_none, 'RIL REQUEST')
-            debug(fmt_num, ' length', header_len)
-            debug(fmt_num, ' command', maybe_unknown(REQUEST, command_or_type))
+            debug(fmt_pkt, 'length', header_len)
+            debug(fmt_pkt, 'command', maybe_unknown(REQUEST, command_or_type))
             if (header_len > 4):
                 token = int.from_bytes(bfr[8:12], byteorder='little')
 
-                debug(fmt_num, ' token', token)
+                debug(fmt_pkt, 'token', token)
 
                 ril_msg = RilRequest(command_or_type, header_len, token)
                 ril_msgs.append(ril_msg)
@@ -216,15 +217,15 @@ class Dissector(object):
                     debug(fmt_none, 'RIL SOLICITED RESPONSE')
                 elif m_type == self.RESPONSE_SOLICITED_ACK_EXP:
                     debug(fmt_none, 'RIL SOLICITED RESPONSE (expect ACK)')
-                debug(fmt_num, ' length', header_len)
+                debug(fmt_pkt, 'length', header_len)
 
                 token = int.from_bytes(bfr[8:12], byteorder='little')
 
-                debug(fmt_num, ' token', token)
+                debug(fmt_pkt, 'token', token)
 
                 error = int.from_bytes(bfr[12:16], byteorder='little')
 
-                debug(fmt_num, ' error', maybe_unknown(ERRNO, error))
+                debug(fmt_pkt, 'error', maybe_unknown(ERRNO, error))
 
                 request = self.requests[token]
                 request_delta = self.request_num - request['request_num']
@@ -234,8 +235,8 @@ class Dissector(object):
                 ril_msgs.append(ril_msg)
 
                 self.pending_requests.remove(ril_msg.token)
-                debug(fmt_num, ' command', maybe_unknown(REQUEST,
-                                                         ril_msg.command))
+                debug(fmt_pkt, 'command', maybe_unknown(REQUEST,
+                                                        ril_msg.command))
                 debug(fmt_num, 'packets until reply', request_delta)
 
                 # TODO handle data
@@ -248,11 +249,11 @@ class Dissector(object):
                     debug(fmt_none, 'RIL UNSOLICITED RESPONSE')
                 elif m_type == self.RESPONSE_UNSOLICITED_ACK_EXP:
                     debug(fmt_none, 'RIL UNSOLICITED RESPONSE (expect ACK)')
-                debug(fmt_num, ' length', header_len)
+                debug(fmt_pkt, 'length', header_len)
 
                 command = int.from_bytes(bfr[8:12], byteorder='little')
 
-                debug(fmt_num, ' command', maybe_unknown(UNSOL, command))
+                debug(fmt_pkt, 'command', maybe_unknown(UNSOL, command))
 
                 ril_msg = RilUnsolicitedResponse(command, header_len)
                 ril_msgs.append(ril_msg)
@@ -263,11 +264,11 @@ class Dissector(object):
                 #     subtree)
             elif (m_type == self.RESPONSE_SOLICITED_ACK):
                 debug(fmt_none, 'RIL SOLICITED RESPONSE (ACK)')
-                debug(fmt_num, ' length', header_len)
+                debug(fmt_pkt, 'length', header_len)
 
                 token = int.from_bytes(bfr[8:12], byteorder='little')
 
-                debug(fmt_num, ' token', token)
+                debug(fmt_pkt, 'token', token)
             else:
                 warning(fmt_num, 'wrong packet type', m_type)
         else:
