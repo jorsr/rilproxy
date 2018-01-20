@@ -171,6 +171,7 @@ class Dissector(object):
             # TODO Why are there unknown commands?
             print('DEBUG RIL REQUEST PACKET')
             print('DEBUG  length: ', header_len)
+            print('DEBUG  command:', bfr[4:8])
             print('DEBUG  command:', maybe_unknown(REQUEST, command_or_type))
             if (header_len > 4):
                 token = int.from_bytes(bfr[8:12], byteorder='little')
@@ -202,16 +203,13 @@ class Dissector(object):
                            self.RESPONSE_SOLICITED_ACK_EXP]):
                 print('DEBUG RIL SOLICITED PACKET')
                 print('DEBUG  length: ', header_len)
-
-                type_str = ''
-
                 if m_type == self.RESPONSE_SOLICITED:
-                    type_str = 'normal'
+                    print('DEBUG  type:   normal')
                 elif m_type == self.RESPONSE_SOLICITED_ACK_EXP:
-                    type_str = 'expect ACK'
-                print('DEBUG  type:   ', type_str)
+                    print('DEBUG  type:   expect ACK')
 
                 token = int.from_bytes(bfr[8:12], byteorder='little')
+
                 print('DEBUG  token:  ', token)
 
                 error = int.from_bytes(bfr[12:16], byteorder='little')
@@ -238,14 +236,10 @@ class Dissector(object):
                              self.RESPONSE_UNSOLICITED_ACK_EXP]):
                 print('DEBUG RIL UNSOLICITED PACKET')
                 print('DEBUG  length: ', header_len)
-
-                type_str = ''
-
                 if m_type == self.RESPONSE_UNSOLICITED:
-                    type_str = 'normal'
+                    print('DEBUG  type:   normal')
                 elif m_type == self.RESPONSE_UNSOLICITED_ACK_EXP:
-                    type_str = 'expect ACK'
-                print('DEBUG  type:   ', type_str)
+                    print('DEBUG  type:   expect ACK')
 
                 command = int.from_bytes(bfr[8:12], byteorder='little')
 
