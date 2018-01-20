@@ -125,7 +125,7 @@ class Dissector(object):
             self.cache = b''.join([self.cache, bfr])
             self.bytes_missing = self.bytes_missing - msg_len
 
-            debug(fmt_num, 'buffer length (reassembled)', msg_len)
+            debug(fmt_num, 'buffer length (reassembled)', len(self.cache))
 
             # Still fragments missing, wait for next packet
             if self.bytes_missing > 0:
