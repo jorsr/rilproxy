@@ -3,7 +3,7 @@
 from logging import basicConfig, debug, info, warning, DEBUG
 import selectors
 import socket
-from ril_h import ERRNO, REQUEST, UNSOL
+from ril_h import ERRNO, ERRNO_NO_RESOURCES, REQUEST, UNSOL
 
 
 # TODO should token be hex?
@@ -122,7 +122,7 @@ class Dissector(object):
         # available in the message.
         print(self.cache)
         if self.bytes_missing > 0 and source in self.cache:
-            self.cache[source] = b''.join([self.cache, bfr])
+            self.cache[source] = b''.join([self.cache[source], bfr])
             self.bytes_missing = self.bytes_missing - msg_len
 
             debug(fmt_num, 'buffer length (reassembled)',
@@ -165,7 +165,8 @@ class Dissector(object):
             return []
         if msg_len <= (header_len - 4):
             self.bytes_missing = header_len - msg_len + 4
-            self.cache[source] = b''.join([self.cache[source], bfr])
+            self.cache[source] = bfr
+
             debug(fmt_none, 'caching the package')
             debug(fmt_num, 'cache', self.cache)
 
@@ -182,7 +183,6 @@ class Dissector(object):
         ril_msgs = []
 
         if (source == 'ril0'):
-            # TODO Why are there unknown commands?
             debug(fmt_none, 'RIL REQUEST')
             debug(fmt_pkt, 'length', header_len)
             debug(fmt_pkt, 'command', maybe_unknown(REQUEST, command_or_type))
@@ -235,7 +235,15 @@ class Dissector(object):
                                                request['request_num'], token)
                 ril_msgs.append(ril_msg)
 
-                self.pending_requests.remove(ril_msg.token)  # FIXME error here
+                # NO_RESOURCES seems to retry again
+                if ril_msg.error != ERRNO_NO_RESOURCES:
+                    if ril_msg.token in self.pending_requests:
+                        self.pending_requests.remove(ril_msg.token)
+                    else:
+                        # TODO try to make sure that warning disappears.. maybe
+                        # I am sometimes to slow and vendorril tries again?
+                        warning(fmt_num, 'token already removed',
+                                ril_msg.token)
                 debug(fmt_pkt, 'command', maybe_unknown(REQUEST,
                                                         ril_msg.command))
                 debug(fmt_num, 'packets until reply', request_delta)
@@ -277,6 +285,8 @@ class Dissector(object):
         info(fmt_num, 'In-flight requests', len(self.pending_requests))
 
         # If data is left in buffer, run dissector on it
+        # TODO RESPONSE_ACK Request seems to be padded with 6 additional bytes
+        # TODO SETUP Request seems to be padded with 10 additional bytes
         if msg_len > header_len + 4:
             info('..running dissector again..')
             additional_ril_msgs = self.dissect(bfr[header_len + 4:], source)
