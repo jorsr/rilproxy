@@ -1,6 +1,6 @@
 import ril_h as r
 
-from logging import debug, info, warning
+from logging import debug, error, info, warning
 
 
 # TODO make data mandatory
@@ -38,9 +38,9 @@ class RilSolicitedResponse(RilMessage):
      * Data
     Command is not in the actual message
     '''
-    def __init__(self, command, error, length, reply_to, token):
+    def __init__(self, command, err, length, reply_to, token):
         self.command = command
-        self.error = error
+        self.error = err
         self.token = token
         reply_to = reply_to
         super().__init__(length)
@@ -146,7 +146,8 @@ class Dissector(object):
             warning(fmt_num, 'skipping long buffer of length', header_len)
             self.bytes_missing = 0
 
-            del self.cache[source]
+            if source in self.cache:
+                del self.cache[source]
 
             return []
         if packet_len <= (header_len - 4):
@@ -214,13 +215,18 @@ class Dissector(object):
 
                 debug(fmt_pkt, 'token', token)
 
-                error = int.from_bytes(bfr[12:16], byteorder='little')
+                err = int.from_bytes(bfr[12:16], byteorder='little')
 
-                debug(fmt_pkt, 'error', maybe_unknown(r.ERRNO, error))
+                debug(fmt_pkt, 'error', maybe_unknown(r.ERRNO, err))
 
-                request = self.requests[token]
+                try:
+                    request = self.requests[token]
+                except KeyError:
+                    error(fmt_none, 'token has never been used before')
+
+                    return []
                 request_delta = self.request_num - request['request_num']
-                ril_msg = RilSolicitedResponse(request['command'], error,
+                ril_msg = RilSolicitedResponse(request['command'], err,
                                                header_len,
                                                request['request_num'], token)
                 ril_msgs.append(ril_msg)
