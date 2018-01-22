@@ -3,7 +3,6 @@
 from validator import validate
 from dissector import Dissector
 
-from argparse import ArgumentParser
 from selectors import DefaultSelector, EVENT_READ
 import logging as lg
 import socket as sc
@@ -19,6 +18,7 @@ FMT_NONE = '%s'
 
 
 def filter_bytes(dissector, bytes_read, local_name, remote, verbose):
+    '''filter UDP and RILPROXY_PORT only'''
     remote_name = remote.getsockname()[0]
 
     # debug output for ehternet header
@@ -120,34 +120,22 @@ def socket_copy(dissector, local, remote, verbose=False):
             local_name, remote_name, len(bytes_read), bytes_written))
 
 
-def main(validate=False):
+def main(proxy_only=False, logging='info'):
     '''Create sockets. Proxy all packets and validate RIL packets.'''
-    # Configure command line parser
-    parser = ArgumentParser(
-        description='Proxy packets between AP VM and BP phone')
-
-    parser.add_argument('-l', '--logging', default='info', type=str,
-                        choices=['verbose', 'debug', 'info', 'warning',
-                                 'error'],
-                        help='log level')
-    parser.add_argument('-v', '--validate', action='store_true',
-                        help='filter non UDP and abort on invalid calls')
-
-    args = parser.parse_args()
 
     # Init logger
     verbose = False
 
-    if args.logging == 'verbose':
+    if logging == 'verbose':
         lg.basicConfig(format='%(levelname)s %(message)s', level=lg.DEBUG)
         verbose = True
-    elif args.logging == 'debug':
+    elif logging == 'debug':
         lg.basicConfig(format='%(levelname)s %(message)s', level=lg.DEBUG)
-    elif args.logging == 'info':
+    elif logging == 'info':
         lg.basicConfig(format='%(levelname)s %(message)s', level=lg.INFO)
-    elif args.logging == 'warning':
+    elif logging == 'warning':
         lg.basicConfig(format='%(levelname)s %(message)s', level=lg.WARNING)
-    elif args.logging == 'error':
+    elif logging == 'error':
         lg.basicConfig(format='%(levelname)s %(message)s', level=lg.ERROR)
 
     # Open sockets
@@ -166,10 +154,10 @@ def main(validate=False):
 
     # Proxy it
     sel = DefaultSelector()
-    if args.validate or validate:
-        dissector = Dissector()
-    else:
+    if proxy_only:
         dissector = None
+    else:
+        dissector = Dissector()
 
     sel.register(local, EVENT_READ)
     sel.register(remote, EVENT_READ)

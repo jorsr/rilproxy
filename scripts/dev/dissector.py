@@ -291,4 +291,4 @@ class Dissector(object):
             for msg in additional_ril_msgs:
                 ril_msgs.append(msg)
 
-        return ril_msgs
+        return ril_msgs  # TODO do not drop SETUP requests
