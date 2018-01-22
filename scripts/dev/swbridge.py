@@ -8,7 +8,7 @@ import selectors
 import socket
 
 
-# TODO make data mandatory
+# TODO cmd line options
 ETH_P_ALL = 0x0003
 RILPROXY_PORT = 18912
 UDP = 17
@@ -18,8 +18,7 @@ FMT_NONE = '%s'
 
 
 def socket_copy(dissector, local, remote, verbose=False):
-    ''' Copy content from to remote socket '''
-    # TODO option for debug output
+    ''' Copy content from local to remote socket '''
     rilproxy_buffer_size = 3000  # TODO 3000 is not a power of 2
     bytes_read = local.recv(rilproxy_buffer_size)
     local_name = local.getsockname()[0]
@@ -107,7 +106,6 @@ def socket_copy(dissector, local, remote, verbose=False):
 
 def main():
     '''Create sockets. Proxy all packets and validate RIL packets.'''
-
     # Init logger
     basicConfig(format='%(levelname)s %(message)s', level=DEBUG)
 

@@ -3,6 +3,9 @@ import ril_h as r
 from logging import debug, info, warning
 
 
+# TODO make data mandatory
+
+
 class RilMessage(object):
     '''General RIL Message.
     All share data and length fields
@@ -181,7 +184,10 @@ class Dissector(object):
                     'command': ril_msg.command,
                     'request_num': self.request_num
                 }
-                self.pending_requests.append(ril_msg.token)
+
+                # RESPONSE_ACKNOWLEDGEMENT does not expect a response
+                if ril_msg.command != r.RESPONSE_ACKNOWLEDGEMENT:
+                    self.pending_requests.append(ril_msg.token)
 
                 if ril_msg.token - self.last_token > 0:
                     debug(fmt_num, 'token delta', ril_msg.token -
@@ -224,8 +230,7 @@ class Dissector(object):
                     if ril_msg.token in self.pending_requests:
                         self.pending_requests.remove(ril_msg.token)
                     else:
-                        # TODO try to make warning disappear.. maybe
-                        # I am sometimes to slow and vendorril tries again?
+                        # TODO try to make warning disappear..
                         warning(fmt_num, 'token already removed',
                                 ril_msg.token)
                 debug(fmt_pkt, 'command', maybe_unknown(r.REQUEST,
