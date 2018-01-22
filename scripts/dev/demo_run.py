@@ -16,4 +16,4 @@ sleep(13)  # Wait 10 seconds for restart
 while run(split(GETPROP_CMD), stdout=PIPE).stdout != b'1\n':
     sleep(1)
 run(split(STARTVM_CMD + VM))
-main()
+main(True)
