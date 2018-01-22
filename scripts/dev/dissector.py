@@ -271,7 +271,7 @@ class Dissector(object):
                 warning(fmt_num, 'wrong packet type', m_type)
         else:
             warning(fmt_none, 'invalid direction')
-        info(fmt_num, 'In-flight requests', len(self.pending_requests))
+        info(fmt_num, 'In-flight requests', self.pending_requests)
 
         # If data is left in buffer, run dissector on it
         len_diff = packet_len - (header_len + 4)
