@@ -75,9 +75,11 @@ def filter_bytes(dissector, bytes_read, local_name, remote, verbose):
 
                 # remove headers
                 udp_payload = bytes_read[42:]
+                payload_info = ([udp_payload[i:i+4].hex()
+                                 for i in range(0, len(udp_payload), 4)])
 
                 lg.debug('[{} -> {}] {}'.format(
-                    local_name, remote_name, udp_payload.hex()))
+                    local_name, remote_name, payload_info))
 
                 # dissect the UDP payload
                 ril_msgs = dissector.dissect(udp_payload, local_name)
@@ -93,6 +95,7 @@ def filter_bytes(dissector, bytes_read, local_name, remote, verbose):
 
                         raise RuntimeError(msg)
 
+                # TODO Do I really want to drop invalid packages?
                 # In case a concatenated parcel is invalid we already stop
                 return bytes_read
             else:
@@ -103,13 +106,13 @@ def filter_bytes(dissector, bytes_read, local_name, remote, verbose):
             lg.info('Dropping: %s is not UDP', ip_protocol)
 
             return None
-    elif ethertype != ARP:
-        lg.info('Dropping: %s is neither IPv4 nor ARP', ethertype)
+    elif ethertype == ARP:
+        lg.info('Proxying: Letting through ARP without dissecting')
 
-        return None
-    lg.info('Proxying: Letting through %s without dissecting', ethertype)
+        return bytes_read
+    lg.info('Dropping: %s is neither IPv4 nor ARP', ethertype)
 
-    return bytes_read
+    return None
 
 
 def socket_copy(dissector, local, remote, verbose=False):

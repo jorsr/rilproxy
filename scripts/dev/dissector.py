@@ -159,7 +159,6 @@ class Dissector(object):
 
             return []
 
-        # FIXME remove these 3 lines
         if source in self.cache:
             warning(fmt_num, 'Clearing cache', self.cache[source])
 
@@ -236,9 +235,8 @@ class Dissector(object):
                     if ril_msg.token in self.pending_requests:
                         self.pending_requests.remove(ril_msg.token)
                     else:
-                        # TODO try to make warning disappear..
-                        warning(fmt_num, 'token already removed',
-                                ril_msg.token)
+                        error(fmt_num, 'token already removed',
+                              ril_msg.token)
                 debug(fmt_pkt, 'command', maybe_unknown(r.REQUEST,
                                                         ril_msg.command))
                 debug(fmt_num, 'packets until reply', request_delta)
@@ -276,18 +274,18 @@ class Dissector(object):
             else:
                 warning(fmt_num, 'wrong packet type', m_type)
         else:
-            warning(fmt_none, 'invalid direction')
+            error(fmt_none, 'invalid direction')
         info(fmt_num, 'In-flight requests', self.pending_requests)
 
         # If data is left in buffer, run dissector on it
         len_diff = packet_len - (header_len + 4)
         if len_diff > 0:
-            # SETUP request is padded with 10 bytes
+            # SETUP request is padded with 10 bytes FIXME Why?
             if command_or_type == self.REQUEST_SETUP:
                 if len_diff == 10:
                     return ril_msgs
 
-            # RESPONSE_ACKNOWLEDGEMENT request is padded with 6 bytes
+            # RESPONSE_ACKNOWLEDGEMENT request is padded with 6 bytes FIXME
             if ril_msgs != []:
                 if ril_msgs[-1].command == r.RESPONSE_ACKNOWLEDGEMENT:
                     if len_diff == 6:
@@ -297,4 +295,4 @@ class Dissector(object):
             for msg in additional_ril_msgs:
                 ril_msgs.append(msg)
 
-        return ril_msgs  # TODO do not drop SETUP requests
+        return ril_msgs
