@@ -40,6 +40,7 @@ Scripts that are supposed to be run on the development machine can now be found 
 Changes to RILProxy scripts
 ---------------------------
 * Added ability to transform `ril.h` into python via `./scripts/dev/convert_ril_h.py --output scripts/dev/ril_h.py /path/to/ril/source/include/telephony/ril.h --python`
+* Compared to `rilsocket.lua`, the python `dissector` module also uses one cache for each direction and handles ACK Parcels
 
 Run the baseband demo
 ---------------------
