@@ -1,3 +1,5 @@
+RILProxy
+=========
 Program to proxy packets transmitted between Android's native radio interfaces
 layer daemon (RILd) and the com.android.phone service. Traffic is intersected
 at the `/dev/socket/rild` UNIX domain socket and forwarded via UDP. Socket path
@@ -9,10 +11,10 @@ other device. This is required to ensure that the initial unsolicited startup
 message from RILd is received by the phone process.
 
 A rudimentary Wirkeshark dissector for the protocol run on `/dev/socket/rild` is
-available in `scripts/rilsocket.lua`. To install it run the follwing steps:
+available in `scripts/dev/rilsocket.lua`. To install it run the follwing steps:
 
  - Get the the Android RIL source by `git clone https://android.googlesource.com/platform/hardware/ril`
- - Generate `ril_h.lua` with `./scripts/convert_ril_h.py --output ril_h.lua /path/to/ril/source/.../include/telephony/ril.h`
+ - Generate `ril_h.lua` with `./scripts/dev/convert_ril_h.py --output ril_h.lua /path/to/ril/source/.../include/telephony/ril.h`
  - Copy `ril_h.lua` and `rilsocket.lua` to the Wireshark plugins directory (which can be found in Wireshark under Help->About Wireshark->Directories->Personal Plugins)
 
 
@@ -25,3 +27,24 @@ Shortcomings/future work:
 * Dissect more protocol messages
 
 (C) 2017, Alexander Senier <senier@componolit.com>
+
+RILProxy Additions
+===================
+Scripts that are supposed to be run on the development machine can now be found under `scricps/dev`. These are:
+* `convert_ril_h.py` Converts the CPP header file `ril.h` to a different language
+* `demo_init.sh` Props the system for running the demo
+* `demo_run.py` (Re-)starts the demo (including VM and phone)
+* `rilbridge.sh` For bridging via shell script only
+* `swbridge.py` Same as `swbrige`, combined with baseband firewall and `rilsocket.lua`
+
+Changes to RILProxy scripts
+---------------------------
+* Added ability to transform `ril.h` into python via `./scripts/dev/convert_ril_h.py --output scripts/dev/ril_h.py /path/to/ril/source/include/telephony/ril.h --python`
+
+Run the baseband demo
+---------------------
+Make sure to follow `componolit/run/baseband_demo.md`. The VM should be called `Componolit`.
+Initialize the demo by running `./demo_init.sh <BP interface>` (sudo required).
+Run the demo via `./demo_run.py`
+
+(C) 2018, Joris Rau <Joris.Rau@tu-dresden.de>

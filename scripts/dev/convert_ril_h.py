@@ -2,6 +2,7 @@
 import re
 import argparse
 import pyparsing as pp
+'''Convert CPP header file ril.h to different language '''
 
 # Tables defining prefices to be trimmed from enum table entries
 trim_prefixes = {
