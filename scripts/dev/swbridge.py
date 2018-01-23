@@ -66,7 +66,7 @@ def filter_bytes(dissector, bytes_read, local_name, remote, verbose):
             udp_payload = bytes_read[42:]
 
             lg.debug('[{} -> {}] {}'.format(
-                local_name, remote_name, udp_payload))
+                local_name, remote_name, udp_payload.hex()))
 
             # dissect the UDP payload
             ril_msgs = dissector.dissect(udp_payload, local_name)
