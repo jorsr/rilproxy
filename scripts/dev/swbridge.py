@@ -26,6 +26,9 @@ class SoftwareBridge(object):
     # ports to let through
     RILPROXY_PORT = 18912
 
+    dissector = None
+    validator = None
+
     def filter_bytes(self, bytes_read, local_name, remote):
         '''filter UDP and RILPROXY_PORT only'''
         remote_name = remote.getsockname()[0]
@@ -142,6 +145,8 @@ class SoftwareBridge(object):
 
             if filtered_bytes:  # TODO possibly create new frame
                 bytes_written = remote.send(filtered_bytes)
+        else:
+            bytes_written = remote.send(bytes_read)
         if bytes_written:
             if bytes_written < 1:
                 raise RuntimeError(
