@@ -97,7 +97,6 @@ class Dissector(object):
 
     def cached(self, source):
         '''is something in the cache for this source? '''
-        self.print_cache()
 
         return source in self.cache
 
@@ -161,7 +160,7 @@ class Dissector(object):
             self.cache[source] = bfr
 
             debug(fmt_none, 'caching the package')
-            # self.print_cache()
+            self.print_cache()
 
             return []
 
