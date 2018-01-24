@@ -144,10 +144,8 @@ class SoftwareBridge(object):
                                                remote)
             bytes_written = None
 
-            if filtered_bytes:
+            if filtered_bytes:  # TODO possibly create new frame
                 bytes_written = remote.send(filtered_bytes)
-
-            bytes_written = remote.send(bytes_read)
         if bytes_written:
             if bytes_written < 1:
                 raise RuntimeError(
