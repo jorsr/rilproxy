@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # (re-)start rilproxy
+from swbridge import SoftwareBridge
+
 from argparse import ArgumentParser
 from shlex import split
 from subprocess import run, PIPE
-from swbridge import main
 from time import sleep
 
 
@@ -33,4 +34,6 @@ while run(split(GETPROP_CMD), stdout=PIPE).stdout != b'1\n':
     sleep(1)
 run(split(STARTVM_CMD + VM))
 
-main(args.proxy_only, args.logging)
+swbridge = SoftwareBridge(args.proxy_only, args.logging)
+
+swbridge.main()
