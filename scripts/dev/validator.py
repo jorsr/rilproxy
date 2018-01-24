@@ -23,7 +23,7 @@ class Validator(object):
         elif call == 'UnsolicitedResponse':
             event = 'OnUnsolicitedResponse(' + UNSOL[command] + ')'
         elif call == 'Message':
-            debug('Message ignored by validator')
+            debug('\tValidator: Message ignored')
 
             return
         else:
@@ -41,8 +41,8 @@ class Validator(object):
             if step.transitions:
                 transition = step.transitions[0]
 
-                debug('%s - %s -> %s', transition.source, transition.event,
-                      transition.target)
+                debug('\tValidator: %s - %s -> %s', transition.source,
+                      transition.event, transition.target)
             else:
                 raise ExecutionError('No valid transition for ' + event +
                                      'from this state.')
@@ -54,5 +54,5 @@ class Validator(object):
 
         assert isinstance(self.statechart, Statechart)
 
-        interpreter = Interpreter(self.statechart)
-        interpreter.execute_once()
+        self.interpreter = Interpreter(self.statechart)
+        self.interpreter.execute_once()

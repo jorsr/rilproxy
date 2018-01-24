@@ -6,6 +6,8 @@ from selectors import DefaultSelector, EVENT_READ
 import logging as lg
 import socket as sc
 
+from sismic.exceptions import ExecutionError
+
 
 class SoftwareBridge(object):
     '''Relay packets between the AP and BP interfaces and filter if necessary
@@ -46,11 +48,12 @@ class SoftwareBridge(object):
             lg.debug(self.FMT_PKT, 'source MAC', ethernet_source)
             lg.debug(self.FMT_PKT, 'EtherType', ethertype)
         if ethertype == self.ARP:
-            lg.info('Forwarding: sending ARP packet without dissecting')
+            lg.info('forwarding: sending ARP packet without dissecting')
 
             return bytes_read
         elif ethertype != self.IPV4:
-            lg.info('Dropping: %s is neither IPv4 nor ARP', ethertype)
+            lg.info('dropping %s packet; it is neither IPv4 nor ARP',
+                    ethertype)
 
             return None
 
@@ -68,7 +71,7 @@ class SoftwareBridge(object):
             lg.debug(self.FMT_PKT, ' destination IP',
                      sc.inet_ntoa(ip_header[16:20]))
         if ip_protocol != self.UDP:
-            lg.info('Dropping: %s is not UDP', ip_protocol)
+            lg.info('dropping %s packet is not UDP', ip_protocol)
 
             return None
 
@@ -86,7 +89,7 @@ class SoftwareBridge(object):
                                                             byteorder='big'))
             lg.debug(self.FMT_PKT, 'checksum', udp_header[6:8])
         if udp_source != self.RILPROXY_PORT:  # NOTE we dont check dest
-            lg.info('Dropping: %s is incorrect port', udp_source)
+            lg.info('dropping packet; %s is the incorrect port', udp_source)
 
             return None
         if self.verbose:
@@ -104,28 +107,31 @@ class SoftwareBridge(object):
 
         if self.dissector.cached(local_name):
             self.cache[local_name] = bytes_read
-            lg.info('Dropping: part of the payload was cached')
+            lg.info('dropping packet; part of the payload was cached')
 
             return None
         elif local_name in self.cache:
             if ril_msgs != []:
-                lg.info('Forwarding: sending cached packet')
+                lg.info('forwarding packet; sending cached')
                 remote.send(self.cache[local_name])
             else:
-                lg.warning('Dropping: cached packet because of boring payload')
+                lg.warning('dropping packet; payload not recognized')
 
             del self.cache[local_name]
         if ril_msgs == []:
-            lg.info('Dropping: payload was boring')
+            lg.info('dropping packet: payload not recognized')
 
             return bytes_read
         for ril_msg in ril_msgs:
             lg.debug('running %s through verifier', ril_msg)
-            self.validator.validate(ril_msg)
+            try:
+                self.validator.validate(ril_msg)
+            except ExecutionError as e:
+                lg.error(e)
 
         # TODO do I really want to drop invalid packages?
         # in case a concatenated parcel is invalid we already stop
-        lg.info('Forwarding: sending packet')
+        lg.info('forwarding packet')
 
         return bytes_read
 
@@ -138,7 +144,7 @@ class SoftwareBridge(object):
         if len(bytes_read) < 0:
             raise RuntimeError('[{} -> {}] error reading {} socket'.format(
                 local_name, remote_name, local_name))
-        if self.dissector:
+        if self.dissector:  # TODO Be a fiewall although we do not validate
             filtered_bytes = self.filter_bytes(bytes_read, local_name,
                                                remote)
             bytes_written = None
@@ -223,6 +229,6 @@ class SoftwareBridge(object):
 
 
 if __name__ == '__main__':
-    bridge = SoftwareBridge(False, 'info')
+    bridge = SoftwareBridge(False, 'debug')
 
     bridge.main()

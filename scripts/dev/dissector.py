@@ -104,9 +104,9 @@ class Dissector(object):
         '''Dissect the RIL packets and return a list of RIL message objects.'''
         pckt_len = len(bfr)
         self.packet_num += 1
-        fmt_num = '\t[' + str(self.packet_num) + '] %s: %s'
-        fmt_pkt = '\t[' + str(self.packet_num) + ']  %s:\t%s'
-        fmt_none = '\t[' + str(self.packet_num) + '] %s'
+        fmt_num = '\tDissector: [' + str(self.packet_num) + '] %s: %s'
+        fmt_pkt = '\tDissector: [' + str(self.packet_num) + ']  %s:\t%s'
+        fmt_none = '\tDissector: [' + str(self.packet_num) + '] %s'
 
         debug(fmt_num, 'buffer length (raw)', pckt_len)
 
@@ -305,8 +305,8 @@ class Dissector(object):
         return ril_msgs
 
     def print_cache(self):
-        debug('\t[' + str(self.packet_num) + '] cache')
+        debug('\tDissector: [' + str(self.packet_num) + '] cache')
         for source in self.cache.keys():
-            debug('\t[' + str(self.packet_num) + '] %s: %s', source,
+            debug('\tDissector: [' + str(self.packet_num) + '] %s: %s', source,
                   ([self.cache[source][i:i+4].hex()
                     for i in range(0, len(self.cache[source]), 4)]))
