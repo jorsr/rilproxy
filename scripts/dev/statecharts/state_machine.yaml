@@ -1,0 +1,240 @@
+statechart:
+    name: THE state machine
+    description: This is the real thing
+    preamble: |
+        cdma = 0
+        gsm = 0
+        orthoFinish = 0
+        triggeredOperator = False
+        triggeredData = False
+        triggeredVoice = False
+        triggeredQuery = False
+    root state:
+        name: Active
+        parallel states:
+            - name: Activity
+              initial: A0
+              states:
+                  - name: A0
+                    transitions:
+                        - target: A1
+                          event: onRequest(GET_ACTIVITY_INFO)
+                  - name: A1
+                    transitions:
+                        - target: A0
+                          event: OnRequestComplete(GET_ACTIVITY_INFO)
+            - name: Signal
+              initial: S0
+              states:
+                  - name: S0
+                    transitions:
+                        - target: S0
+                          event: OnUnsolicitedResponse(SIGNAL_STRENGTH)
+            - name: Main
+              initial: Initial
+              states:
+                  - name: Initial
+                    initial: I0
+                    states:
+                        - name: I0
+                        - name: 5_9_12_1
+                          transitions:
+                              - target: OrthogonalS1
+                                event: OnUnsolicitedResponse(RESPONSE_VOICE_NETWORK_STATE_CHANGED)
+                                action: |
+                                    triggeredOperator = False
+                                    triggeredData = False
+                                    triggeredVoice = False
+                                    triggeredQuery = False
+                              - target: S16
+                                event: onRequest(CDMA_SET_BROADCAST_SMS_CONFIG)
+                                action: cdma = 0
+                    transitions:
+                        - target: 3_1_0
+                          event: onRequest(SEND_SMS)
+                        - target: 3_2_0
+                          event: onRequest(SEND_SMS_EXPECT_MORE)
+                        - target: S8
+                          event: OnUnsolicitedResponse(RESPONSE_NEW_SMS)
+                        - target: 5_9_12_0
+                          event: onRequest(SET_FACILITY_LOCK)
+                  - name: 3_1
+                    states:
+                        - name: 3_1_0
+                          transitions:
+                              - target: Initial
+                                event: OnRequestComplete(SEND_SMS)
+                  - name: 3_2
+                    states:
+                        - name: 3_2_0
+                          transitions:
+                            - target: 3_2_1
+                              event: onRequest(SEND_SMS)
+                        - name: 3_2_1
+                          transitions:
+                              - target: 3_2_2
+                                event: OnRequestComplete(SEND_SMS_EXPECT_MORE)
+                        - name: 3_2_2
+                          transitions:
+                              - target: Initial
+                                event: OnRequestComplete(SEND_SMS)
+                  - name: 3_3_4
+                    states:
+                        - name: S8
+                          transitions:
+                              - target: S9
+                                event: onRequest(SMS_ACKNOWLEDGE)
+                        - name: S9
+                          transitions:
+                              - target: Initial
+                                event: OnRequestComplete(SMS_ACKNOWLEDGE)
+                  - name: 5_9_12
+                    states:
+                        - name: 5_9_12_0
+                          transitions:
+                              - target: OrthogonalS0
+                                event: OnUnsolicitedResponse(RESPONSE_SIM_STATUS_CHANGED)
+                        - name: OrthogonalS0
+                          parallel states:
+                              - name: SimStatus
+                                initial: S11
+                                states:
+                                    - name: S11
+                                      transitions:
+                                          - target: S12
+                                            event: onRequest(GET_SIM_STATUS)
+                                            action: orthoFinish += 1
+                                    - name: S12
+                                      type: final
+                              - name: FacilityLock
+                                initial: S13
+                                states:
+                                    - name: S13
+                                      transitions:
+                                          - target: S14
+                                            event: OnRequestComplete(SET_FACILITY_LOCK)
+                                            action: orthoFinish += 1
+                                    - name: S14
+                                      type: final
+                          transitions:
+                              - target: 5_9_12_1
+                                guard: orthoFinish == 2
+                                event: OnRequestComplete(GET_SIM_STATUS)
+                                action: orthoFinish = 0
+                  - name: 5_12
+                    states:
+                        - name: OrthogonalS1
+                          parallel states:
+                            - name: Oem
+                              initial: Oe0
+                              states:
+                                - name: Oe0
+                                  transitions:
+                                      - target: Oe1
+                                        event: OnUnsolicitedResponse(OEM_HOOK_RAW)
+                                        action: orthoFinish += 1
+                                - name: Oe1
+                                  type: final
+                            - name: Requests
+                              initial: N0
+                              states:
+                                  - name: N0
+                                    transitions:
+                                        - target: N1
+                                          event: onRequest(OPERATOR)
+                                          action: triggeredOperator = True
+                                  - name: N1
+                                    transitions:
+                                        - target: N2
+                                          event: onRequest(DATA_REGISTRATION_STATE)
+                                          action: triggeredData = True
+                                  - name: N2
+                                    transitions:
+                                        - target: N3
+                                          event: onRequest(VOICE_REGISTRATION_STATE)
+                                          action: triggeredVoice = True
+                                  - name: N3
+                                    transitions:
+                                        - target: N4
+                                          event: onRequest(QUERY_NETWORK_SELECTION_MODE)
+                                          action: |
+                                              triggeredQuery = True
+                                              orthoFinish += 1
+                                  - name: N4
+                                    type: final
+                            - name: Operator
+                              initial: Op0
+                              states:
+                                  - name: Op0
+                                    transitions:
+                                        - target: Op1
+                                          guard: triggeredOperator == True
+                                          event: OnRequestComplete(OPERATOR)
+                                          action: orthoFinish += 1
+                                  - name: Op1
+                                    type: final
+                            - name: Data
+                              initial: D0
+                              states:
+                                  - name: D0
+                                    transitions:
+                                        - target: D1
+                                          guard: triggeredData == True
+                                          event: OnRequestComplete(DATA_REGISTRATION_STATE)
+                                          action: orthoFinish += 1
+                                  - name: D1
+                                    type: final
+                            - name: Voice
+                              initial: V0
+                              states:
+                                  - name: V0
+                                    transitions:
+                                        - target: V1
+                                          guard: triggeredVoice == True
+                                          event: OnRequestComplete(VOICE_REGISTRATION_STATE)
+                                          action: orthoFinish += 1
+                                  - name: V1
+                                    type: final
+                            - name: Query
+                              initial: Q0
+                              states:
+                                  - name: Q0
+                                    transitions:
+                                        - target: Q1
+                                          guard: triggeredQuery == True
+                                          event: OnRequestComplete(QUERY_NETWORK_SELECTION_MODE)
+                                          action: orthoFinish += 1
+                                  - name: Q1
+                                    type: final
+                          transitions:
+                              - target: Initial
+                                guard: orthoFinish == 6
+                                event: OnUnsolicitedResponse(OEM_HOOK_RAW)
+                                action: orthoFinish = 0
+
+                        - name: S16
+                          transitions:
+                              - target: S17
+                                guard: cdma < 4
+                                event: OnRequestComplete(CDMA_SET_BROADCAST_SMS_CONFIG)
+                                action: cdma += 1
+                        - name: S17
+                          transitions:
+                              - target: S16
+                                event: onRequest(CDMA_SET_BROADCAST_SMS_CONFIG)
+                              - target: S18
+                                guard: cdma == 4
+                                event: onRequest(GSM_SMS_BROADCAST_ACTIVATION)
+                                action: gsm = 0
+                        - name: S18
+                          transitions:
+                              - target: S19
+                                guard: gsm < 12
+                                event: OnRequestComplete(GSM_SMS_BROADCAST_ACTIVATION)
+                                action: gsm += 1
+                        - name: S19
+                          transitions:
+                              - target: S18
+                                event: onRequest(GSM_SMS_BROADCAST_ACTIVATION)
+                              - target: I0
+                                guard: gsm == 12

@@ -4,5 +4,9 @@ obj
 logs
 swbridge
 
-# Python specific
+## Python specific
+# Byte-compiled / optimized / DLL files
 __pycache__/
+
+# Environments
+venv/

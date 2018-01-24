@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from validator import validate
+from validator import Validator
 from dissector import Dissector
 
 from selectors import DefaultSelector, EVENT_READ
@@ -8,7 +8,7 @@ import socket as sc
 
 
 class SoftwareBridge(object):
-    '''relay packets between the AP and BP interfaces and filter if necessary
+    '''Relay packets between the AP and BP interfaces and filter if necessary
     '''
     ETH_P_ALL = 0x0003
     FMT_NUM = '%s: %s'
@@ -118,11 +118,7 @@ class SoftwareBridge(object):
             return bytes_read
         for ril_msg in ril_msgs:
             lg.debug('running %s through verifier', ril_msg)
-            if not validate(ril_msg):
-                msg = '[{} -> {}] unnacceptable parcel {}'.format(
-                    local_name, remote_name, ril_msg)
-
-                raise RuntimeError(msg)
+            self.validator.validate(ril_msg)
 
         # TODO do I really want to drop invalid packages?
         # in case a concatenated parcel is invalid we already stop
@@ -131,7 +127,7 @@ class SoftwareBridge(object):
         return bytes_read
 
     def socket_copy(self, local, remote):
-        ''' Copy content from local to remote socket '''
+        '''Copy content from local to remote socket '''
         bytes_read = local.recv(self.RILPROXY_BUFFER_SIZE)
         local_name = local.getsockname()[0]
         remote_name = remote.getsockname()[0]
@@ -190,10 +186,9 @@ class SoftwareBridge(object):
 
         # proxy it
         sel = DefaultSelector()
-        if self.proxy_only:
-            self.dissector = None
-        else:
+        if not self.proxy_only:
             self.dissector = Dissector()
+            self.validator = Validator()
 
         sel.register(local, EVENT_READ)
         sel.register(remote, EVENT_READ)
