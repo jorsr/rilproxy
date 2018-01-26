@@ -60,7 +60,7 @@ class SoftwareBridge(object):
 
             return bytes_read
         elif ethertype != self.IPV4:
-            lg.info('dropping %s packet; It is neither IPv4 nor ARP.',
+            lg.info('dropping %s packet: It is neither IPv4 nor ARP.',
                     ethertype)
 
             return None
@@ -79,7 +79,7 @@ class SoftwareBridge(object):
             lg.debug(self.FMT_PKT, ' destination IP',
                      sc.inet_ntoa(ip_header[16:20]))
         if ip_protocol != self.UDP:
-            lg.info('dropping %s packet is not UDP', ip_protocol)
+            lg.info('dropping packet: %s is not UDP.', ip_protocol)
 
             return None
 
@@ -97,7 +97,7 @@ class SoftwareBridge(object):
                                                             byteorder='big'))
             lg.debug(self.FMT_PKT, 'checksum', udp_header[6:8])
         if udp_source != self.RILPROXY_PORT:  # NOTE we dont check dest
-            lg.info('dropping packet; %s is the incorrect port.', udp_source)
+            lg.info('dropping packet: %s is the incorrect port.', udp_source)
 
             return None
         if self.verbose:
@@ -130,10 +130,10 @@ class SoftwareBridge(object):
             if self.signal_time and time() - self.signal_time > 120:
                 self.waiting = False
                 self.validator = Validator()
-                lg.info('starting validator now!')
+                lg.info('starting validator now! PLEASE START USER ACTION!')
         if self.dissector.cached(local_name):
             self.cache[local_name] = bytes_read
-            lg.info('dropping packet; Part of the payload was cached.')
+            lg.info('dropping packet: Part of the payload was cached.')
 
             return None
         if ril_msgs == []:

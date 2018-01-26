@@ -27,7 +27,7 @@ class Validator(object):
 
             return
         else:
-            error('%s not supported by validator', call)
+            error('\tValidator: %s not supported by validator', call)
 
             return
 
