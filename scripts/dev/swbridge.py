@@ -11,7 +11,14 @@ from sismic.exceptions import ExecutionError
 
 class SoftwareBridge(object):
     '''Relay packets between the AP and BP interfaces and filter if necessary
+    boolean proxy_all
+    boolean verify
+    boolean wait
     '''
+    # TODO verify - flag for verification, turn off by default
+    # TODO wait - flag to wait verifying before encountering 4x signalstrength
+    # Do not verify for 120s after 4x signalstrength
+    # Notify user that verification starts now and verify
     ETH_P_ALL = 0x0003
     FMT_NUM = '%s: %s'
     FMT_PKT = ' %s:\t%s'
@@ -33,6 +40,11 @@ class SoftwareBridge(object):
 
     def filter_bytes(self, bytes_read, local_name, remote):
         '''filter UDP and RILPROXY_PORT only'''
+        if self.proxy_all:
+            lg.info('forwarding packet')
+
+            return bytes_read
+
         remote_name = remote.getsockname()[0]
 
         # read ehternet header
@@ -48,11 +60,12 @@ class SoftwareBridge(object):
             lg.debug(self.FMT_PKT, 'source MAC', ethernet_source)
             lg.debug(self.FMT_PKT, 'EtherType', ethertype)
         if ethertype == self.ARP:
-            lg.info('forwarding: sending ARP packet without dissecting')
+            lg.info(
+                'forwarding packet: Sending ARP packet without dissecting.')
 
             return bytes_read
         elif ethertype != self.IPV4:
-            lg.info('dropping %s packet; it is neither IPv4 nor ARP',
+            lg.info('dropping %s packet; It is neither IPv4 nor ARP.',
                     ethertype)
 
             return None
@@ -89,7 +102,7 @@ class SoftwareBridge(object):
                                                             byteorder='big'))
             lg.debug(self.FMT_PKT, 'checksum', udp_header[6:8])
         if udp_source != self.RILPROXY_PORT:  # NOTE we dont check dest
-            lg.info('dropping packet; %s is the incorrect port', udp_source)
+            lg.info('dropping packet; %s is the incorrect port.', udp_source)
 
             return None
         if self.verbose:
@@ -107,19 +120,11 @@ class SoftwareBridge(object):
 
         if self.dissector.cached(local_name):
             self.cache[local_name] = bytes_read
-            lg.info('dropping packet; part of the payload was cached')
+            lg.info('dropping packet; Part of the payload was cached.')
 
             return None
-        elif local_name in self.cache:
-            if ril_msgs != []:
-                lg.info('forwarding packet; sending cached')
-                remote.send(self.cache[local_name])
-            else:
-                lg.warning('dropping packet; payload not recognized')
-
-            del self.cache[local_name]
         if ril_msgs == []:
-            lg.info('dropping packet: payload not recognized')
+            lg.info('dropping packet: Payload not recognized.')
 
             return bytes_read
         for ril_msg in ril_msgs:
@@ -127,8 +132,21 @@ class SoftwareBridge(object):
             try:
                 self.validator.validate(ril_msg)
             except ExecutionError as e:
-                lg.error(e)
+                lg.error('dropping packet: %s', e)
+                if local_name in self.cache:
+                    lg.error('dropping cache')
 
+                    del self.cache[local_name]
+
+                return None
+        if local_name in self.cache:
+            if ril_msgs != []:
+                lg.info('forwarding cache')
+                remote.send(self.cache[local_name])
+            else:
+                lg.warning('dropping cache: Payload not recognized.')
+
+            del self.cache[local_name]
         # TODO do I really want to drop invalid packages?
         # in case a concatenated parcel is invalid we already stop
         lg.info('forwarding packet')
@@ -144,15 +162,12 @@ class SoftwareBridge(object):
         if len(bytes_read) < 0:
             raise RuntimeError('[{} -> {}] error reading {} socket'.format(
                 local_name, remote_name, local_name))
-        if self.dissector:  # TODO Be a fiewall although we do not validate
-            filtered_bytes = self.filter_bytes(bytes_read, local_name,
-                                               remote)
-            bytes_written = None
 
-            if filtered_bytes:  # TODO possibly create new frame
-                bytes_written = remote.send(filtered_bytes)
-        else:
-            bytes_written = remote.send(bytes_read)
+        filtered_bytes = self.filter_bytes(bytes_read, local_name, remote)
+        bytes_written = None
+
+        if filtered_bytes:  # TODO possibly create new frame
+            bytes_written = remote.send(filtered_bytes)
         if bytes_written:
             if bytes_written < 1:
                 raise RuntimeError(
@@ -197,7 +212,7 @@ class SoftwareBridge(object):
 
         # proxy it
         sel = DefaultSelector()
-        if not self.proxy_only:
+        if not self.proxy_all:
             self.dissector = Dissector()
             self.validator = Validator()
 
@@ -219,8 +234,9 @@ class SoftwareBridge(object):
         local.close()
         remote.close()
 
-    def __init__(self, proxy_only=False, logging='info'):
-        self.proxy_only = proxy_only
+    def __init__(self, logging='info', proxy_all=False, verify=False,
+                 wait=False):
+        self.proxy_all = proxy_all
         self.logging = logging
         if logging == 'verbose':
             self.verbose = True
@@ -229,6 +245,6 @@ class SoftwareBridge(object):
 
 
 if __name__ == '__main__':
-    bridge = SoftwareBridge(False, 'debug')
+    bridge = SoftwareBridge()
 
     bridge.main()

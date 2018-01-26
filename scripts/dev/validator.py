@@ -23,7 +23,7 @@ class Validator(object):
         elif call == 'UnsolicitedResponse':
             event = 'OnUnsolicitedResponse(' + UNSOL[command] + ')'
         elif call == 'Message':
-            debug('\tValidator: Message ignored')
+            debug('\tValidator: message ignored')
 
             return
         else:

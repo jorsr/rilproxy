@@ -22,8 +22,9 @@ parser.add_argument('-l', '--logging', default='info', type=str,
                     choices=['verbose', 'debug', 'info', 'warning',
                              'error'],
                     help='log level (default=info)')
-parser.add_argument('-p', '--proxy-only', action='store_true',
-                    help='Do not filter non-UDP packets and allow all calls')
+
+parser.add_argument('-p', '--proxy-all', action='store_true',
+                    help='Let all packets through')
 
 args = parser.parse_args()
 
@@ -34,6 +35,9 @@ while run(split(GETPROP_CMD), stdout=PIPE).stdout != b'1\n':
     sleep(1)
 run(split(STARTVM_CMD + VM))
 
-swbridge = SoftwareBridge(args.proxy_only, args.logging)
+if args.proxy_all:
+    swbridge = SoftwareBridge(args.logging, True, True, True)
+else:
+    swbridge = SoftwareBridge(args.logging, False, True, True)
 
 swbridge.main()
