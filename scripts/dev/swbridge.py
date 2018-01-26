@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
+from dissector import Dissector, RilUnsolicitedResponse
+from ril_h import UNSOL_SIGNAL_STRENGTH
 from validator import Validator
-from dissector import Dissector
 
 from selectors import DefaultSelector, EVENT_READ
+from time import time
 import logging as lg
 import socket as sc
 
@@ -15,10 +17,6 @@ class SoftwareBridge(object):
     boolean validate
     boolean wait
     '''
-    # TODO validate - flag for validation, turn off by default
-    # TODO wait - flag to wait validation before encountering 4x signalstrength
-    # Do not validate for 120s after 4x signalstrength
-    # Notify user that validation starts now and validate
     ETH_P_ALL = 0x0003
     FMT_NUM = '%s: %s'
     FMT_PKT = ' %s:\t%s'
@@ -115,6 +113,24 @@ class SoftwareBridge(object):
         # dissect the UDP payload
         ril_msgs = self.dissector.dissect(udp_payload, local_name)
 
+        # Determine if we are still waiting
+        if self.waiting:
+            for ril_msg in ril_msgs:
+                if isinstance(ril_msg, RilUnsolicitedResponse):
+                    if ril_msg.command == UNSOL_SIGNAL_STRENGTH:
+                        self.signal_count += 1
+                        lg.debug('waiting: Received signal %s times.',
+                                 self.signal_count)
+                else:
+                    self.signal_count = 0
+                    lg.debug('waiting: Received signal %s times.',
+                             self.signal_count)
+            if self.signal_count == 4 and not self.signal_time:
+                self.signal_time = time()
+            if self.signal_time and time() - self.signal_time > 120:
+                self.waiting = False
+                self.validator = Validator()
+                lg.info('starting validator now!')
         if self.dissector.cached(local_name):
             self.cache[local_name] = bytes_read
             lg.info('dropping packet; Part of the payload was cached.')
@@ -124,7 +140,7 @@ class SoftwareBridge(object):
             lg.info('dropping packet: Payload not recognized.')
 
             return bytes_read
-        if self.validate:
+        if self.validate and not self.waiting:
             for ril_msg in ril_msgs:
                 lg.debug('running %s through validator', ril_msg)
                 try:
@@ -241,9 +257,13 @@ class SoftwareBridge(object):
 
     def __init__(self, logging='info', proxy_all=False, validate=False,
                  wait=False):
-        self.proxy_all = proxy_all
         self.logging = logging
+        self.proxy_all = proxy_all
         self.validate = validate
+        self.waiting = wait
+
+        if wait:
+            self.signal_time = None
 
         if logging == 'verbose':
             self.verbose = True

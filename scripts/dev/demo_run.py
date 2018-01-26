@@ -37,7 +37,6 @@ run(split(STARTVM_CMD + VM))
 if args.proxy_all:
     swbridge = SoftwareBridge(args.logging, True, True, True)
 else:
-    # TODO validate=True
-    swbridge = SoftwareBridge(args.logging, False, False, True)
+    swbridge = SoftwareBridge(args.logging, False, True, True)
 
 swbridge.main()
