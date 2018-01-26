@@ -12,13 +12,13 @@ from sismic.exceptions import ExecutionError
 class SoftwareBridge(object):
     '''Relay packets between the AP and BP interfaces and filter if necessary
     boolean proxy_all
-    boolean verify
+    boolean validate
     boolean wait
     '''
-    # TODO verify - flag for verification, turn off by default
-    # TODO wait - flag to wait verifying before encountering 4x signalstrength
-    # Do not verify for 120s after 4x signalstrength
-    # Notify user that verification starts now and verify
+    # TODO validate - flag for validation, turn off by default
+    # TODO wait - flag to wait validation before encountering 4x signalstrength
+    # Do not validate for 120s after 4x signalstrength
+    # Notify user that validation starts now and validate
     ETH_P_ALL = 0x0003
     FMT_NUM = '%s: %s'
     FMT_PKT = ' %s:\t%s'
@@ -34,9 +34,6 @@ class SoftwareBridge(object):
 
     # ports to let through
     RILPROXY_PORT = 18912
-
-    dissector = None
-    validator = None
 
     def filter_bytes(self, bytes_read, local_name, remote):
         '''filter UDP and RILPROXY_PORT only'''
@@ -127,18 +124,19 @@ class SoftwareBridge(object):
             lg.info('dropping packet: Payload not recognized.')
 
             return bytes_read
-        for ril_msg in ril_msgs:
-            lg.debug('running %s through verifier', ril_msg)
-            try:
-                self.validator.validate(ril_msg)
-            except ExecutionError as e:
-                lg.error('dropping packet: %s', e)
-                if local_name in self.cache:
-                    lg.error('dropping cache')
+        if self.validate:
+            for ril_msg in ril_msgs:
+                lg.debug('running %s through validator', ril_msg)
+                try:
+                    self.validator.validate(ril_msg)
+                except ExecutionError as e:
+                    lg.error('dropping packet: %s', e)
+                    if local_name in self.cache:
+                        lg.error('dropping cache')
 
-                    del self.cache[local_name]
+                        del self.cache[local_name]
 
-                return None
+                    return None
         if local_name in self.cache:
             if ril_msgs != []:
                 lg.info('forwarding cache')
@@ -212,10 +210,17 @@ class SoftwareBridge(object):
 
         # proxy it
         sel = DefaultSelector()
-        if not self.proxy_all:
+
+        # Create dissector and validator
+        if self.proxy_all:
+            self.dissector = None
+            self.validator = None
+        elif self.validate:
             self.dissector = Dissector()
             self.validator = Validator()
-
+        else:
+            self.dissector = Dissector()
+            self.validator = None
         sel.register(local, EVENT_READ)
         sel.register(remote, EVENT_READ)
 
@@ -234,10 +239,12 @@ class SoftwareBridge(object):
         local.close()
         remote.close()
 
-    def __init__(self, logging='info', proxy_all=False, verify=False,
+    def __init__(self, logging='info', proxy_all=False, validate=False,
                  wait=False):
         self.proxy_all = proxy_all
         self.logging = logging
+        self.validate = validate
+
         if logging == 'verbose':
             self.verbose = True
         else:

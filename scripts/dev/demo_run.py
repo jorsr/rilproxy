@@ -22,7 +22,6 @@ parser.add_argument('-l', '--logging', default='info', type=str,
                     choices=['verbose', 'debug', 'info', 'warning',
                              'error'],
                     help='log level (default=info)')
-
 parser.add_argument('-p', '--proxy-all', action='store_true',
                     help='Let all packets through')
 
@@ -38,6 +37,7 @@ run(split(STARTVM_CMD + VM))
 if args.proxy_all:
     swbridge = SoftwareBridge(args.logging, True, True, True)
 else:
-    swbridge = SoftwareBridge(args.logging, False, True, True)
+    # TODO validate=True
+    swbridge = SoftwareBridge(args.logging, False, False, True)
 
 swbridge.main()
