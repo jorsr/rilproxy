@@ -39,13 +39,23 @@ Scripts that are supposed to be run on the development machine can now be found 
 
 Changes to RILProxy scripts
 ---------------------------
-* Added ability to transform `ril.h` into python via `./scripts/dev/convert_ril_h.py --output scripts/dev/ril_h.py /path/to/ril/source/include/telephony/ril.h --python`
+* Added ability to transform `ril.h` into python via:
+
+`./scripts/dev/convert_ril_h.py --output scripts/dev/ril_h.py /path/to/ril.h --python`
 * Compared to `rilsocket.lua`, the python `dissector` module also uses one cache for each direction and handles ACK Parcels
 
 Run the baseband demo
 ---------------------
-Make sure to follow `componolit/run/baseband_demo.md`. The VM should be called `Componolit`.
-Initialize the demo by running `./demo_init.sh <BP interface>` (sudo required).
+Make sure that you are using the vendor RIL with RIL version < 13 (prior to build number NPD26.48-24-1, see [here](https://github.com/TheMuppets/proprietary_vendor_motorola/commits/cm-14.1/msm8916-common)).
+
+Follow [Componolit GmbH's baseband demo guide](https://github.com/Componolit/componolit/blob/baseband_fw/run/baseband_demo.md). The VM should be called `Componolit`.
+
+Install [Sismic](https://github.com/AlexandreDecan/sismic/) via `pip install sismic`. I recommend installing in a [virtual environment](https://docs.python.org/3/library/venv.html).
+
+Go to development script folder `cd scripts/dev/`
+
+Initialize the demo by running `./demo_init.sh <BP interface>` (CAREFUL `sudo` required).
+
 Run the demo via `./demo_run.py`
 
-(C) 2018, Joris Rau <Joris.Rau@tu-dresden.de>
+© 2018, Joris Rau <Joris.Rau@tu-dresden.de>
