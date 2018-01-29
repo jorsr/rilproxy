@@ -1,6 +1,6 @@
 from ril_h import REQUEST, UNSOL
 
-from logging import debug, error
+from logging import info, error
 
 from sismic.exceptions import ExecutionError
 from sismic.io import import_from_yaml
@@ -23,7 +23,7 @@ class Validator(object):
         elif call == 'UnsolicitedResponse':
             event = 'OnUnsolicitedResponse(' + UNSOL[command] + ')'
         elif call == 'Message':
-            debug('\tValidator: message ignored')
+            info('\tValidator: message ignored')
 
             return
         else:
@@ -41,8 +41,8 @@ class Validator(object):
             if step.transitions:
                 transition = step.transitions[0]
 
-                debug('\tValidator: %s - %s -> %s', transition.source,
-                      transition.event, transition.target)
+                info('\tValidator: %s - %s -> %s', transition.source,
+                     transition.event, transition.target)
             else:
                 raise ExecutionError('No valid transition for ' + event +
                                      'from this state.')

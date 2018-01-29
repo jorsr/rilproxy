@@ -4,7 +4,7 @@ from ril_h import UNSOL_SIGNAL_STRENGTH
 from validator import Validator
 
 from selectors import DefaultSelector, EVENT_READ
-from time import time
+# TODO Add countdown from time import time
 import logging as lg
 import socket as sc
 
@@ -15,7 +15,7 @@ class SoftwareBridge(object):
     '''Relay packets between the AP and BP interfaces and filter if necessary
     boolean proxy_all
     boolean validate
-    boolean wait
+    boolean wait Wait 2 mins before activating the validator
     '''
     ETH_P_ALL = 0x0003
     FMT_NUM = '%s: %s'
@@ -119,18 +119,20 @@ class SoftwareBridge(object):
                 if isinstance(ril_msg, RilUnsolicitedResponse):
                     if ril_msg.command == UNSOL_SIGNAL_STRENGTH:
                         self.signal_count += 1
-                        lg.debug('waiting: Received signal %s times.',
-                                 self.signal_count)
+                        lg.info('waiting: Received signal %s times.',
+                                self.signal_count)
                 else:
                     self.signal_count = 0
-                    lg.debug('waiting: Received signal %s times.',
-                             self.signal_count)
-            if self.signal_count == 4 and not self.signal_time:
-                self.signal_time = time()
-            if self.signal_time and time() - self.signal_time > 120:
+                    lg.info('waiting: Received signal %s times.',
+                            self.signal_count)
+            if self.signal_count == 4:
                 self.waiting = False
                 self.validator = Validator()
                 lg.info('starting validator now! PLEASE START USER ACTION!')
+            # TODO add countdown
+            #  and not self.signal_time:
+            #     self.signal_time = time()
+            # if self.signal_time and time() - self.signal_time > 120:
         if self.dissector.cached(local_name):
             self.cache[local_name] = bytes_read
             lg.info('dropping packet: Part of the payload was cached.')
@@ -161,8 +163,6 @@ class SoftwareBridge(object):
                 lg.warning('dropping cache: Payload not recognized.')
 
             del self.cache[local_name]
-        # TODO do I really want to drop invalid packages?
-        # in case a concatenated parcel is invalid we already stop
         lg.info('forwarding packet')
 
         return bytes_read

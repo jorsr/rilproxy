@@ -34,9 +34,6 @@ while run(split(GETPROP_CMD), stdout=PIPE).stdout != b'1\n':
     sleep(1)
 run(split(STARTVM_CMD + VM))
 
-if args.proxy_all:
-    swbridge = SoftwareBridge(args.logging, True, True, True)
-else:
-    swbridge = SoftwareBridge(args.logging, False, True, True)
+swbridge = SoftwareBridge(args.logging, args.proxy_all, True, True)
 
 swbridge.main()
