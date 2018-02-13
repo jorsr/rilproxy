@@ -18,12 +18,14 @@ STARTVM_CMD = 'VBoxManage startvm '
 parser = ArgumentParser(
     description='(Re-)start proxying of packets between AP VM and BP phone')
 
+parser.add_argument('phone_if',
+                    help='the network interface coming from the phone')
 parser.add_argument('-l', '--logging', default='info', type=str,
                     choices=['verbose', 'debug', 'info', 'warning',
                              'error'],
                     help='log level (default=info)')
 parser.add_argument('-p', '--proxy-all', action='store_true',
-                    help='Let all packets through')
+                    help='let all packets through')
 
 args = parser.parse_args()
 
@@ -34,6 +36,7 @@ while run(split(GETPROP_CMD), stdout=PIPE).stdout != b'1\n':
     sleep(1)
 run(split(STARTVM_CMD + VM))
 
-swbridge = SoftwareBridge(args.logging, args.proxy_all, True, True)
+swbridge = SoftwareBridge(args.phone_if, args.logging, args.proxy_all, True,
+                          True)
 
 swbridge.main()

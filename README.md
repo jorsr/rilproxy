@@ -54,8 +54,8 @@ Install [Sismic](https://github.com/AlexandreDecan/sismic/) via `pip install sis
 
 Go to development script folder `cd scripts/dev/`
 
-Initialize the demo by running `./demo_init.sh <BP interface>` (CAREFUL `sudo` required).
+Initialize the demo by running `./demo_init.sh phone_if` (CAREFUL `sudo` required).
 
-Run the demo via `./demo_run.py`
+Run the demo via `./demo_run.py phone_if`
 
 © 2018, Joris Rau <Joris.Rau@tu-dresden.de>

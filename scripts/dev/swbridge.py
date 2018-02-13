@@ -3,6 +3,7 @@ from dissector import Dissector, RilUnsolicitedResponse
 from ril_h import UNSOL_SIGNAL_STRENGTH
 from validator import Validator
 
+from argparse import ArgumentParser
 from selectors import DefaultSelector, EVENT_READ
 # TODO Add countdown from time import time
 import logging as lg
@@ -13,9 +14,11 @@ from sismic.exceptions import ExecutionError
 
 class SoftwareBridge(object):
     '''Relay packets between the AP and BP interfaces and filter if necessary
-    boolean proxy_all
-    boolean validate
-    boolean wait Wait 2 mins before activating the validator
+
+    Arguements for initialization:
+    proxy_all -- do not filter packets (default False)
+    validate -- run packets through validator (default False)
+    wait -- wait 2 mins before activating the validator (default False)
     '''
     ETH_P_ALL = 0x0003
     FMT_NUM = '%s: %s'
@@ -221,8 +224,8 @@ class SoftwareBridge(object):
         remote.setsockopt(sc.SOL_SOCKET, sc.SO_REUSEADDR,
                           1)
         remote.setsockopt(sc.SOL_SOCKET, sc.SO_BINDTODEVICE,
-                          str('enp0s29u1u4' + '\0').encode('utf-8'))
-        remote.bind(('enp0s29u1u4', 0))
+                          str(self.phone_if + '\0').encode('utf-8'))
+        remote.bind((self.phone_if, 0))
 
         # proxy it
         sel = DefaultSelector()
@@ -232,10 +235,10 @@ class SoftwareBridge(object):
             self.dissector = None
             self.validator = None
         elif self.validate:
-            self.dissector = Dissector()
+            self.dissector = Dissector(self.phone_if)
             self.validator = Validator()
         else:
-            self.dissector = Dissector()
+            self.dissector = Dissector(self.phone_if)
             self.validator = None
         sel.register(local, EVENT_READ)
         sel.register(remote, EVENT_READ)
@@ -255,9 +258,10 @@ class SoftwareBridge(object):
         local.close()
         remote.close()
 
-    def __init__(self, logging='info', proxy_all=False, validate=False,
-                 wait=False):
+    def __init__(self, phone_if, logging='info', proxy_all=False,
+                 validate=False, wait=False):
         self.logging = logging
+        self.phone_if = phone_if
         self.proxy_all = proxy_all
         self.validate = validate
         self.waiting = wait
@@ -272,6 +276,12 @@ class SoftwareBridge(object):
 
 
 if __name__ == '__main__':
-    bridge = SoftwareBridge()
+    parser = ArgumentParser(
+        description='Proxy packets between AP VM and BP phone')
+
+    parser.add_argument('phone_if',
+                        help='the network interface coming from the phone')
+
+    bridge = SoftwareBridge(parser.parse_args().phone_if)
 
     bridge.main()

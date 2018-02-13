@@ -2,7 +2,7 @@
 # NOTE On error, restarting the phone helps sometimes
 if [ $# -lt 1 ];
 then
-    echo "$0: <BP interface>"
+    echo "$0: <phone_interface>"
     exit 1
 fi
 

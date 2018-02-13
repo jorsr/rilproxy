@@ -8,6 +8,7 @@ from logging import debug, error, info, warning
 
 class RilMessage(object):
     '''General RIL Message.
+
     All share data and length fields.
     Every message has an associated RIL command
     '''
@@ -18,6 +19,7 @@ class RilMessage(object):
 
 class RilRequest(RilMessage):
     '''A RIL Request.
+
     The fields are (in order):
      * Length
      * Command
@@ -31,6 +33,7 @@ class RilRequest(RilMessage):
 
 class RilSolicitedResponse(RilMessage):
     '''A RIL Solicited Response to a RIL Request.
+
     The fields are (in order):
      * Length
      * M_Type (0 or 3)
@@ -48,6 +51,7 @@ class RilSolicitedResponse(RilMessage):
 
 class RilUnsolicitedResponse(RilMessage):
     '''A RIL Unsolicited Response.
+
     The fields are (in order):
      * Length
      * M_Type (1 or 4)
@@ -67,9 +71,9 @@ def maybe_unknown(dictionary, value):
 
 
 class Dissector(object):
-    '''Dissects RIL Packets and is able to validate them.
-    Based on the Lua Wireshark dissector by Componolit and merged with my own
-    validator.
+    '''Dissects RIL Packets.
+
+    Based on the Lua Wireshark dissector by Componolit.
     '''
     # Inset custom rilproxy request constants
     REQUEST_SETUP = 0xc715
@@ -96,7 +100,7 @@ class Dissector(object):
     packet_num = 0  # from last packet
 
     def cached(self, source):
-        '''is something in the cache for this source? '''
+        '''is something in the cache for this source?'''
 
         return source in self.cache
 
@@ -208,7 +212,7 @@ class Dissector(object):
                 ril_msg = RilMessage(command_or_type, header_len)
 
                 ril_msgs.append(ril_msg)
-        elif source == 'enp0s29u1u4':
+        elif source == self.phone_if:
             m_type = int.from_bytes(bfr[4:8], byteorder='little')
 
             if (m_type in [self.RESPONSE_SOLICITED,
@@ -310,3 +314,6 @@ class Dissector(object):
             debug('\tDissector: [' + str(self.packet_num) + '] %s: %s', source,
                   ([self.cache[source][i:i+4].hex()
                     for i in range(0, len(self.cache[source]), 4)]))
+
+    def __init__(self, phone_if):
+        self.phone_if = phone_if
